@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Camera from './Camera'
 
 function App() {
   const [started, setStarted] = useState(false)
@@ -6,7 +7,7 @@ function App() {
   if (started) {
   return (
     <div>
-      <p>Camera goes here</p>
+      <Camera />
       <button onClick={() => setStarted(false)}>Stop camera</button>
     </div>
   )
