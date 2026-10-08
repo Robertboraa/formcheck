@@ -10,7 +10,7 @@ function angle(a: Point, b: Point, c: Point) {
   return degrees
 }
 
-function Camera({ file }: { file: File | null }) {
+function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<HTMLCanvasElement>(null)
@@ -18,7 +18,7 @@ function Camera({ file }: { file: File | null }) {
   const [reps, setReps] = useState(0)
   const [status, setStatus] = useState('Stand side-on with your whole body in view')
   const [feedback, setFeedback] = useState('')
-  const [log, setLog] = useState<string[]>([])
+  
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -139,11 +139,10 @@ function Camera({ file }: { file: File | null }) {
             if (maxLean > 50) problems.push('Keep your chest up')
 
             const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
-            setFeedback(`${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°)`)
-            setLog((old) => [
-              ...old,
-            `${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°)`,
-            ])
+            const line = `${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°)`
+            setFeedback(line)
+            onRep(line)
+
             minAngle = 180
             maxLean = 0
             }
@@ -213,13 +212,8 @@ function Camera({ file }: { file: File | null }) {
       <p>Left knee: {knee.toFixed(0)}°</p>
       <p>Reps: {reps}</p>
       <p>{feedback}</p>
-      <h3>Your reps</h3>
-      <ol>
-       {log.map((line, i) => (
-        <li key={i}>{line}</li>
-       ))}
-      </ol>
-    </div>
+      
+      </div>
   )
 }
 
