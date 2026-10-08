@@ -10,7 +10,7 @@ function angle(a: Point, b: Point, c: Point) {
   return degrees
 }
 
-function Camera() {
+function Camera({ file }: { file: File | null }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<HTMLCanvasElement>(null)
@@ -18,20 +18,27 @@ function Camera() {
   const [reps, setReps] = useState(0)
   const [status, setStatus] = useState('Stand side-on with your whole body in view')
   const [feedback, setFeedback] = useState('')
+  const [log, setLog] = useState<string[]>([])
 
   useEffect(() => {
     let stream: MediaStream | null = null
     let stopped = false
 
     async function start() {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      if (stopped) {
-        stream.getTracks().forEach((track) => track.stop())
-        return
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
+      if (file) {
+  if (videoRef.current) {
+    videoRef.current.src = URL.createObjectURL(file)
+  }
+} else {
+  stream = await navigator.mediaDevices.getUserMedia({ video: true })
+  if (stopped) {
+    stream.getTracks().forEach((track) => track.stop())
+    return
+  }
+  if (videoRef.current) {
+    videoRef.current.srcObject = stream
+  }
+}
 
       const vision = await FilesetResolver.forVisionTasks('/wasm')
       const landmarker = await PoseLandmarker.createFromOptions(vision, {
@@ -54,10 +61,11 @@ function Camera() {
       let minAngle = 180
       let startX = 0
       let startTorso = 0
+      let maxLean = 0
 
       function loop() {
         if (stopped || !video || !canvas || !ctx || !chart || !chartCtx) return
-        if (video.readyState >= 2) {
+        if (video.readyState >= 2 && !video.ended) {
           const result = landmarker.detectForVideo(video, performance.now())
           const landmarks = result.landmarks[0]
 
@@ -79,7 +87,8 @@ function Camera() {
               (landmarks[27].visibility ?? 0) > 0.5
 
             const torso = Math.hypot(px(11).x - px(23).x, px(11).y - px(23).y)
-
+            const lean = (Math.atan2(Math.abs(px(11).x - px(23).x), Math.abs(px(23).y - px(11).y)) * 180) / Math.PI
+            
             // wait until the user is standing still in view
             if (stage === 'waiting') {
               if (visible && kneeAngle > 160) {
@@ -111,23 +120,32 @@ function Camera() {
               stage = 'down'
             }
 
-            // 2. while down, remember the deepest point
+            // 2. while down, remember the deepest point and the biggest lean
             if (stage === 'down' && kneeAngle < minAngle) {
-              minAngle = kneeAngle
+            minAngle = kneeAngle
+            }
+            if (stage === 'down' && lean > maxLean && (landmarks[11].visibility ?? 0) > 0.5) {
+            maxLean = lean
             }
 
             // 3. stood back up → count the rep and judge it
             if (stage === 'down' && kneeAngle > 160) {
-              stage = 'up'
-              repCount = repCount + 1
-              setReps(repCount)
+            stage = 'up'
+            repCount = repCount + 1
+            setReps(repCount)
 
-              if (minAngle <= 95) {
-                setFeedback('Good depth')
-              } else {
-                setFeedback('Go lower next time')
-              }
-              minAngle = 180
+            const problems: string[] = []
+            if (minAngle > 95) problems.push('Go lower next time')
+            if (maxLean > 50) problems.push('Keep your chest up')
+
+            const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
+            setFeedback(`${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°)`)
+            setLog((old) => [
+              ...old,
+            `${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°)`,
+            ])
+            minAngle = 180
+            maxLean = 0
             }
 
             // angle chart
@@ -175,7 +193,7 @@ function Camera() {
       stopped = true
       stream?.getTracks().forEach((track) => track.stop())
     }
-  }, [])
+  }, [file])
 
   return (
     <div>
@@ -195,6 +213,12 @@ function Camera() {
       <p>Left knee: {knee.toFixed(0)}°</p>
       <p>Reps: {reps}</p>
       <p>{feedback}</p>
+      <h3>Your reps</h3>
+      <ol>
+       {log.map((line, i) => (
+        <li key={i}>{line}</li>
+       ))}
+      </ol>
     </div>
   )
 }
