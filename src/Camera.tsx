@@ -75,6 +75,9 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
       let maxLean = 0
       let minNeck = 180
       let side = 'left'
+      let smoothKnee = 180
+      let smoothLean = 0
+      let smoothNeck = 180
 
       function loop() {
         if (stopped || !video || !canvas || !ctx || !chart || !chartCtx) return
@@ -105,13 +108,19 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
             const [ear, shoulder, hip, kneeJoint, ankle] =
               side === 'left' ? [7, 11, 23, 25, 27] : [8, 12, 24, 26, 28]
             // measurements, using whichever side faces the camera
-            const kneeAngle = angle(px(hip), px(kneeJoint), px(ankle))
+            const rawKnee = angle(px(hip), px(kneeJoint), px(ankle))
+            smoothKnee = smoothKnee * 0.7 + rawKnee * 0.3
+            const kneeAngle = smoothKnee
             const torso = Math.hypot(px(shoulder).x - px(hip).x, px(shoulder).y - px(hip).y)
-            const lean =
+            const rawLean =
               (Math.atan2(Math.abs(px(shoulder).x - px(hip).x), Math.abs(px(hip).y - px(shoulder).y)) * 180) /
               Math.PI
-            const neck = angle(px(ear), px(shoulder), px(hip))
+            smoothLean = smoothLean * 0.7 + rawLean * 0.3
+            const lean = smoothLean
 
+            const rawNeck = angle(px(ear), px(shoulder), px(hip))
+            smoothNeck = smoothNeck * 0.7 + rawNeck * 0.3
+            const neck = smoothNeck
             frameCount = frameCount + 1
             if (frameCount % 30 === 0) {
               setKnee(kneeAngle)
