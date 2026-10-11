@@ -6,6 +6,8 @@ function App() {
   const [file, setFile] = useState<File | null>(null)
   const [log, setLog] = useState<string[]>([])
 
+  const clipName = file?.name ?? 'Live camera'
+
   if (screen === 'session') {
     return (
       <div>
@@ -26,6 +28,7 @@ function App() {
     return (
       <div>
         <h1>Session summary</h1>
+        <p>{clipName}</p>
         <p>
           {log.length} reps, {good} with good form
         </p>
@@ -34,6 +37,9 @@ function App() {
             <li key={i}>{line}</li>
           ))}
         </ol>
+        <button onClick={() => navigator.clipboard.writeText(`${clipName}\n${log.join('\n')}`)}>
+          Copy results
+        </button>
         <button onClick={() => setScreen('start')}>New session</button>
       </div>
     )

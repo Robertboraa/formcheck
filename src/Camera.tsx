@@ -10,6 +10,11 @@ function angle(a: Point, b: Point, c: Point) {
   return degrees
 }
 
+// tilt of the line a→b away from vertical, in degrees
+function tilt(a: Point, b: Point) {
+  return (Math.atan2(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 180) / Math.PI
+}
+
 function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -65,19 +70,42 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
 
       const history: number[] = []
       let stage = 'waiting'
+      let side = 'left'
       let repCount = 0
       let readyFrames = 0
       let frameCount = 0
       let lastTime = -1
       let startX = 0
       let startTorso = 0
-      let minAngle = 180
-      let maxLean = 0
-      let minNeck = 180
-      let side = 'left'
+      let startFoot = 0
+
+      // smoothed measurements (remembered between frames)
       let smoothKnee = 180
       let smoothLean = 0
       let smoothNeck = 180
+      let smoothFoot = 0
+      let smoothBalance = 50
+      let smoothKneePos = 50
+      let smoothShin = 0
+
+      // worst value of each measurement during the current rep
+      let minAngle = 180
+      let maxLean = 0
+      let minNeck = 180
+      let maxHeelLift = 0
+      let maxBalance = 0
+      let maxKneePos = 0
+      let maxShin = 0
+
+      function resetRep() {
+        minAngle = 180
+        maxLean = 0
+        minNeck = 180
+        maxHeelLift = 0
+        maxBalance = 0
+        maxKneePos = 0
+        maxShin = 0
+      }
 
       function loop() {
         if (stopped || !video || !canvas || !ctx || !chart || !chartCtx) return
@@ -97,30 +125,54 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
               x: landmarks[i].x * canvas.width,
               y: landmarks[i].y * canvas.height,
             })
-            const seen = (i: number) => (landmarks[i].visibility ?? 0) > 0.5
             const vis = (i: number) => landmarks[i].visibility ?? 0
+            const seen = (i: number) => vis(i) > 0.5
+            const blend = (old: number, fresh: number) => old * 0.7 + fresh * 0.3
 
             // while waiting, pick whichever side faces the camera
             if (stage === 'waiting') {
               side = vis(23) + vis(25) + vis(27) >= vis(24) + vis(26) + vis(28) ? 'left' : 'right'
             }
+            const [ear, shoulder, hip, kneeJoint, ankle, heel, toe] =
+              side === 'left' ? [7, 11, 23, 25, 27, 29, 31] : [8, 12, 24, 26, 28, 30, 32]
 
-            const [ear, shoulder, hip, kneeJoint, ankle] =
-              side === 'left' ? [7, 11, 23, 25, 27] : [8, 12, 24, 26, 28]
-            // measurements, using whichever side faces the camera
-            const rawKnee = angle(px(hip), px(kneeJoint), px(ankle))
-            smoothKnee = smoothKnee * 0.7 + rawKnee * 0.3
-            const kneeAngle = smoothKnee
+            // measurements
             const torso = Math.hypot(px(shoulder).x - px(hip).x, px(shoulder).y - px(hip).y)
-            const rawLean =
-              (Math.atan2(Math.abs(px(shoulder).x - px(hip).x), Math.abs(px(hip).y - px(shoulder).y)) * 180) /
-              Math.PI
-            smoothLean = smoothLean * 0.7 + rawLean * 0.3
+
+            smoothKnee = blend(smoothKnee, angle(px(hip), px(kneeJoint), px(ankle)))
+            const kneeAngle = smoothKnee
+
+            smoothLean = blend(smoothLean, tilt(px(shoulder), px(hip)))
             const lean = smoothLean
 
-            const rawNeck = angle(px(ear), px(shoulder), px(hip))
-            smoothNeck = smoothNeck * 0.7 + rawNeck * 0.3
+            smoothNeck = blend(smoothNeck, angle(px(ear), px(shoulder), px(hip)))
             const neck = smoothNeck
+
+            // shin: how far the lower leg tips forward from vertical
+            smoothShin = blend(smoothShin, tilt(px(kneeJoint), px(ankle)))
+            const shin = smoothShin
+
+            // heels: tilt of the heel→toe line, compared with standing
+            const footTilt =
+              (Math.atan2(px(toe).y - px(heel).y, Math.abs(px(toe).x - px(heel).x)) * 180) / Math.PI
+            smoothFoot = blend(smoothFoot, footTilt)
+            const heelLift = smoothFoot - startFoot
+
+            // positions along the foot: 0% = above the heel, 100% = above the toes
+            const footLength = px(toe).x - px(heel).x || 1
+            const alongFoot = (x: number) => ((x - px(heel).x) / footLength) * 100
+            const midX = (a: number, b: number) => (px(a).x + px(b).x) / 2
+
+            // balance: rough centre of mass (trunk 60%, thigh 25%, lower leg 15%)
+            const comX =
+              0.6 * midX(shoulder, hip) + 0.25 * midX(hip, kneeJoint) + 0.15 * midX(kneeJoint, ankle)
+            smoothBalance = blend(smoothBalance, alongFoot(comX))
+            const balance = smoothBalance
+
+            // knee: how far forward the knee is
+            smoothKneePos = blend(smoothKneePos, alongFoot(px(kneeJoint).x))
+            const kneePos = smoothKneePos
+
             frameCount = frameCount + 1
             if (frameCount % 30 === 0) {
               setKnee(kneeAngle)
@@ -137,6 +189,7 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
                 stage = 'up'
                 startX = px(hip).x
                 startTorso = torso
+                startFoot = smoothFoot
                 setStatus('Ready. Start squatting')
               }
             }
@@ -148,9 +201,7 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
             if (stage !== 'waiting' && (moved || resized)) {
               stage = 'waiting'
               readyFrames = 0
-              minAngle = 180
-              maxLean = 0
-              minNeck = 180
+              resetRep()
               setStatus('Paused. Get back into position')
             }
 
@@ -159,15 +210,17 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
               stage = 'down'
             }
 
-            // 2. while down, remember the worst value for each rule
-            if (stage === 'down' && kneeAngle < minAngle) {
-              minAngle = kneeAngle
-            }
-            if (stage === 'down' && lean > maxLean && seen(shoulder)) {
-              maxLean = lean
-            }
-            if (stage === 'down' && neck < minNeck && seen(ear) && seen(shoulder)) {
-              minNeck = neck
+            // 2. while down, remember the worst value of each measurement
+            if (stage === 'down') {
+              if (kneeAngle < minAngle) minAngle = kneeAngle
+              if (shin > maxShin) maxShin = shin
+              if (seen(shoulder) && lean > maxLean) maxLean = lean
+              if (seen(ear) && seen(shoulder) && neck < minNeck) minNeck = neck
+              if (seen(heel) && seen(toe)) {
+                if (heelLift > maxHeelLift) maxHeelLift = heelLift
+                if (balance > maxBalance) maxBalance = balance
+                if (kneePos > maxKneePos) maxKneePos = kneePos
+              }
             }
 
             // 3. stood back up → count the rep and judge it
@@ -180,15 +233,22 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
               if (minAngle > 95) problems.push('Go lower next time')
               if (maxLean > 50) problems.push('Keep your chest up')
               if (minNeck < 140) problems.push('Keep your head in line with your back')
-
+              if (maxBalance > 50) problems.push('Sit back, your weight is on your toes')
+              if (maxHeelLift > 8) problems.push('Keep your heels down')  
               const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
-              const line = `${verdict} (depth ${minAngle.toFixed(0)}°, lean ${maxLean.toFixed(0)}°, neck ${minNeck.toFixed(0)}°)`
+              const line = [
+                verdict,
+                `depth ${minAngle.toFixed(0)}°`,
+                `lean ${maxLean.toFixed(0)}°`,
+                `neck ${minNeck.toFixed(0)}°`,
+                `heels ${maxHeelLift.toFixed(0)}°`,
+                `balance ${maxBalance.toFixed(0)}%`,
+                `knee ${maxKneePos.toFixed(0)}%`,
+                `shin ${maxShin.toFixed(0)}°`,
+              ].join(' | ')
               setFeedback(line)
               onRep(line)
-
-              minAngle = 180
-              maxLean = 0
-              minNeck = 180
+              resetRep()
             }
 
             // angle chart
