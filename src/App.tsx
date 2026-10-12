@@ -1,17 +1,22 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Camera from './Camera'
+import { EXERCISES } from './exercises'
 
 function App() {
   const [screen, setScreen] = useState('start')
   const [file, setFile] = useState<File | null>(null)
   const [log, setLog] = useState<string[]>([])
+  const [exerciseId, setExerciseId] = useState(EXERCISES[0].id)
 
+  const exercise = EXERCISES.find((x) => x.id === exerciseId) ?? EXERCISES[0]
   const clipName = file?.name ?? 'Live camera'
+  const addRep = useCallback((line: string) => setLog((old) => [...old, line]), [])
 
   if (screen === 'session') {
     return (
       <div>
-        <Camera file={file} onRep={(line) => setLog((old) => [...old, line])} />
+        <h2>{exercise.name}</h2>
+        <Camera file={file} exercise={exercise} onRep={addRep} />
         <button onClick={() => setScreen('summary')}>Finish</button>
         <h3>Your reps</h3>
         <ol>
@@ -28,7 +33,9 @@ function App() {
     return (
       <div>
         <h1>Session summary</h1>
-        <p>{clipName}</p>
+        <p>
+          {exercise.name}, {clipName}
+        </p>
         <p>
           {log.length} reps, {good} with good form
         </p>
@@ -37,7 +44,11 @@ function App() {
             <li key={i}>{line}</li>
           ))}
         </ol>
-        <button onClick={() => navigator.clipboard.writeText(`${clipName}\n${log.join('\n')}`)}>
+        <button
+          onClick={() =>
+            navigator.clipboard.writeText(`${exercise.name}, ${clipName}\n${log.join('\n')}`)
+          }
+        >
           Copy results
         </button>
         <button onClick={() => setScreen('start')}>New session</button>
@@ -48,6 +59,18 @@ function App() {
   return (
     <div>
       <h1>FormCheck</h1>
+      <p>
+        <label>
+          Exercise:{' '}
+          <select value={exerciseId} onChange={(e) => setExerciseId(e.target.value)}>
+            {EXERCISES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </p>
       <button
         onClick={() => {
           setLog([])
@@ -65,6 +88,7 @@ function App() {
           setLog([])
           setFile(e.target.files?.[0] ?? null)
           setScreen('session')
+          e.target.value = ''
         }}
       />
     </div>

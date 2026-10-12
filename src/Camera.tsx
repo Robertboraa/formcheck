@@ -1,27 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
+import { LEFT, RIGHT, type Exercise, type Frame } from './exercises'
 
-type Point = { x: number; y: number }
-
-function angle(a: Point, b: Point, c: Point) {
-  const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x)
-  let degrees = Math.abs((radians * 180) / Math.PI)
-  if (degrees > 180) degrees = 360 - degrees
-  return degrees
+type Props = {
+  file: File | null
+  exercise: Exercise
+  onRep: (line: string) => void
 }
 
-// tilt of the line a→b away from vertical, in degrees
-function tilt(a: Point, b: Point) {
-  return (Math.atan2(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 180) / Math.PI
-}
-
-function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => void }) {
+function Camera({ file, exercise, onRep }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<HTMLCanvasElement>(null)
-  const [knee, setKnee] = useState(0)
+  const [mainValue, setMainValue] = useState(0)
   const [reps, setReps] = useState(0)
-  const [status, setStatus] = useState('Stand side-on with your whole body in view')
+  const [status, setStatus] = useState('Get into position, side-on, with your whole body in view')
   const [feedback, setFeedback] = useState('')
 
   useEffect(() => {
@@ -70,41 +63,23 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
 
       const history: number[] = []
       let stage = 'waiting'
-      let side = 'left'
+      let joints = LEFT
       let repCount = 0
       let readyFrames = 0
       let frameCount = 0
       let lastTime = -1
       let startX = 0
       let startTorso = 0
-      let startFoot = 0
 
-      // smoothed measurements (remembered between frames)
-      let smoothKnee = 180
-      let smoothLean = 0
-      let smoothNeck = 180
-      let smoothFoot = 0
-      let smoothBalance = 50
-      let smoothKneePos = 50
-      let smoothShin = 0
+      // smoothed values (remembered between frames), the values at the ready
+      // position, and the worst value of each measurement during the current rep
+      const smooth: Record<string, number> = {}
+      let baseline: Record<string, number> = {}
+      let worst: Record<string, number | undefined> = {}
 
-      // worst value of each measurement during the current rep
-      let minAngle = 180
-      let maxLean = 0
-      let minNeck = 180
-      let maxHeelLift = 0
-      let maxBalance = 0
-      let maxKneePos = 0
-      let maxShin = 0
-
-      function resetRep() {
-        minAngle = 180
-        maxLean = 0
-        minNeck = 180
-        maxHeelLift = 0
-        maxBalance = 0
-        maxKneePos = 0
-        maxShin = 0
+      function blend(key: string, value: number) {
+        smooth[key] = key in smooth ? smooth[key] * 0.7 + value * 0.3 : value
+        return smooth[key]
       }
 
       function loop() {
@@ -127,132 +102,97 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
             })
             const vis = (i: number) => landmarks[i].visibility ?? 0
             const seen = (i: number) => vis(i) > 0.5
-            const blend = (old: number, fresh: number) => old * 0.7 + fresh * 0.3
 
             // while waiting, pick whichever side faces the camera
             if (stage === 'waiting') {
-              side = vis(23) + vis(25) + vis(27) >= vis(24) + vis(26) + vis(28) ? 'left' : 'right'
+              const score = (s: typeof LEFT) =>
+                vis(s.shoulder) + vis(s.elbow) + vis(s.wrist) + vis(s.hip) + vis(s.knee) + vis(s.ankle)
+              joints = score(LEFT) >= score(RIGHT) ? LEFT : RIGHT
             }
-            const [ear, shoulder, hip, kneeJoint, ankle, heel, toe] =
-              side === 'left' ? [7, 11, 23, 25, 27, 29, 31] : [8, 12, 24, 26, 28, 30, 32]
+            const j = joints
+            const frame: Frame = { p: px, j }
+            const allSeen = (names: (keyof typeof j)[]) => names.every((name) => seen(j[name]))
 
             // measurements
-            const torso = Math.hypot(px(shoulder).x - px(hip).x, px(shoulder).y - px(hip).y)
-
-            smoothKnee = blend(smoothKnee, angle(px(hip), px(kneeJoint), px(ankle)))
-            const kneeAngle = smoothKnee
-
-            smoothLean = blend(smoothLean, tilt(px(shoulder), px(hip)))
-            const lean = smoothLean
-
-            smoothNeck = blend(smoothNeck, angle(px(ear), px(shoulder), px(hip)))
-            const neck = smoothNeck
-
-            // shin: how far the lower leg tips forward from vertical
-            smoothShin = blend(smoothShin, tilt(px(kneeJoint), px(ankle)))
-            const shin = smoothShin
-
-            // heels: tilt of the heel→toe line, compared with standing
-            const footTilt =
-              (Math.atan2(px(toe).y - px(heel).y, Math.abs(px(toe).x - px(heel).x)) * 180) / Math.PI
-            smoothFoot = blend(smoothFoot, footTilt)
-            const heelLift = smoothFoot - startFoot
-
-            // positions along the foot: 0% = above the heel, 100% = above the toes
-            const footLength = px(toe).x - px(heel).x || 1
-            const alongFoot = (x: number) => ((x - px(heel).x) / footLength) * 100
-            const midX = (a: number, b: number) => (px(a).x + px(b).x) / 2
-
-            // balance: rough centre of mass (trunk 60%, thigh 25%, lower leg 15%)
-            const comX =
-              0.6 * midX(shoulder, hip) + 0.25 * midX(hip, kneeJoint) + 0.15 * midX(kneeJoint, ankle)
-            smoothBalance = blend(smoothBalance, alongFoot(comX))
-            const balance = smoothBalance
-
-            // knee: how far forward the knee is
-            smoothKneePos = blend(smoothKneePos, alongFoot(px(kneeJoint).x))
-            const kneePos = smoothKneePos
+            const main = blend('main', exercise.main(frame))
+            const values: Record<string, number> = {}
+            for (const m of exercise.measures) {
+              let v = blend(m.key, m.get(frame))
+              if (m.fromBaseline) v = v - (baseline[m.key] ?? v)
+              if (m.abs) v = Math.abs(v)
+              values[m.key] = v
+            }
+            const torso = Math.hypot(px(j.shoulder).x - px(j.hip).x, px(j.shoulder).y - px(j.hip).y)
 
             frameCount = frameCount + 1
-            if (frameCount % 30 === 0) {
-              setKnee(kneeAngle)
+            if (frameCount % 10 === 0) {
+              setMainValue(main)
             }
 
-            // wait until the user is standing still in view
+            // wait until the user is holding the start position in view
             if (stage === 'waiting') {
-              if (seen(hip) && seen(kneeJoint) && seen(ankle) && kneeAngle > 160) {
+              if (allSeen(exercise.mainNeeds) && main > exercise.topAbove) {
                 readyFrames = readyFrames + 1
               } else {
                 readyFrames = 0
               }
               if (readyFrames > 30) {
                 stage = 'up'
-                startX = px(hip).x
+                startX = px(j.hip).x
                 startTorso = torso
-                startFoot = smoothFoot
-                setStatus('Ready. Start squatting')
+                baseline = { ...smooth }
+                setStatus(exercise.readyText)
               }
             }
 
-            // pause if the user leaves their squat spot
-            const moved = Math.abs(px(hip).x - startX) > startTorso
+            // pause if the user leaves their spot
+            const moved = Math.abs(px(j.hip).x - startX) > startTorso
             const resized = Math.abs(torso - startTorso) > startTorso * 0.25
 
             if (stage !== 'waiting' && (moved || resized)) {
               stage = 'waiting'
               readyFrames = 0
-              resetRep()
+              worst = {}
               setStatus('Paused. Get back into position')
             }
 
-            // 1. standing → going down
-            if (stage === 'up' && kneeAngle < 130) {
+            // 1. top → going down
+            if (stage === 'up' && main < exercise.downBelow) {
               stage = 'down'
             }
 
             // 2. while down, remember the worst value of each measurement
             if (stage === 'down') {
-              if (kneeAngle < minAngle) minAngle = kneeAngle
-              if (shin > maxShin) maxShin = shin
-              if (seen(shoulder) && lean > maxLean) maxLean = lean
-              if (seen(ear) && seen(shoulder) && neck < minNeck) minNeck = neck
-              if (seen(heel) && seen(toe)) {
-                if (heelLift > maxHeelLift) maxHeelLift = heelLift
-                if (balance > maxBalance) maxBalance = balance
-                if (kneePos > maxKneePos) maxKneePos = kneePos
+              for (const m of exercise.measures) {
+                if (m.needs && !allSeen(m.needs)) continue
+                const v = values[m.key]
+                const old = worst[m.key]
+                if (old === undefined || (m.worst === 'min' ? v < old : v > old)) {
+                  worst[m.key] = v
+                }
               }
             }
 
-            // 3. stood back up → count the rep and judge it
-            if (stage === 'down' && kneeAngle > 160) {
+            // 3. back at the top → count the rep and judge it
+            if (stage === 'down' && main > exercise.topAbove) {
               stage = 'up'
               repCount = repCount + 1
               setReps(repCount)
 
-              const problems: string[] = []
-              if (minAngle > 95) problems.push('Go lower next time')
-              if (maxLean > 50) problems.push('Keep your chest up')
-              if (minNeck < 140) problems.push('Keep your head in line with your back')
-              if (maxBalance > 50) problems.push('Sit back, your weight is on your toes')
-              if (maxHeelLift > 8) problems.push('Keep your heels down')  
+              const problems = exercise.judge(worst)
               const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
-              const line = [
-                verdict,
-                `depth ${minAngle.toFixed(0)}°`,
-                `lean ${maxLean.toFixed(0)}°`,
-                `neck ${minNeck.toFixed(0)}°`,
-                `heels ${maxHeelLift.toFixed(0)}°`,
-                `balance ${maxBalance.toFixed(0)}%`,
-                `knee ${maxKneePos.toFixed(0)}%`,
-                `shin ${maxShin.toFixed(0)}°`,
-              ].join(' | ')
+              const numbers = exercise.measures.map((m) => {
+                const v = worst[m.key]
+                return `${m.label} ${v === undefined ? '–' : v.toFixed(0)}${m.unit}`
+              })
+              const line = [verdict, ...numbers].join(' | ')
               setFeedback(line)
               onRep(line)
-              resetRep()
+              worst = {}
             }
 
             // angle chart
-            history.push(kneeAngle)
+            history.push(main)
             if (history.length > 300) history.shift()
 
             chartCtx.clearRect(0, 0, chart.width, chart.height)
@@ -297,7 +237,7 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
       stream?.getTracks().forEach((track) => track.stop())
       model?.close()
     }
-  }, [file])
+  }, [file, exercise, onRep])
 
   const layer = {
     position: 'absolute',
@@ -320,7 +260,9 @@ function Camera({ file, onRep }: { file: File | null; onRep: (line: string) => v
         </div>
       </div>
       <p>Status: {status}</p>
-      <p>Knee: {knee.toFixed(0)}°</p>
+      <p>
+        {exercise.mainLabel}: {mainValue.toFixed(0)}°
+      </p>
       <p>Reps: {reps}</p>
       <p>{feedback}</p>
     </div>
