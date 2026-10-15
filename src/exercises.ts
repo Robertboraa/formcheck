@@ -101,6 +101,16 @@ const squat: Exercise = {
       get: ({ p, j }) => angle(p(j.ear), p(j.shoulder), p(j.hip)),
     },
     {
+    // how far the nose points up from level (positive = looking up)
+    key: 'headUp',
+    label: 'head up',
+    unit: '°',
+    worst: 'max',
+    needs: ['ear'],
+    get: ({ p, j }) =>
+    (Math.atan2(p(j.ear).y - p(0).y, Math.abs(p(0).x - p(j.ear).x)) * 180) / Math.PI,
+},
+    {
       key: 'heels',
       label: 'heels',
       unit: '°',
@@ -133,11 +143,12 @@ const squat: Exercise = {
     },
     { key: 'shin', label: 'shin', unit: '°', worst: 'max', get: ({ p, j }) => tilt(p(j.knee), p(j.ankle)) },
   ],
-  judge: (w) => {
+   judge: (w) => {
     const problems: string[] = []
     if ((w.depth ?? 180) > 95) problems.push('Go lower next time')
     if ((w.lean ?? 0) > 50) problems.push('Keep your chest up')
-    if ((w.neck ?? 180) < 140) problems.push('Keep your head in line with your back')
+    if ((w.headUp ?? -90) > 0) problems.push('Look forward, not up at the ceiling')
+    if ((w.headUp ?? 0) < -38) problems.push('Lift your chin, look a few metres ahead')
     if ((w.balance ?? 0) > 50) problems.push('Sit back, your weight is on your toes')
     if ((w.heels ?? 0) > 8) problems.push('Keep your heels down')
     return problems

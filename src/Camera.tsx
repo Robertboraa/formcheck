@@ -136,7 +136,7 @@ function Camera({ file, exercise, onRep }: Props) {
               } else {
                 readyFrames = 0
               }
-              if (readyFrames > 30) {
+              if (readyFrames > (file ? 5 : 30)) {
                 stage = 'up'
                 startX = px(j.hip).x
                 startTorso = torso
