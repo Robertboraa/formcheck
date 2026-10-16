@@ -154,10 +154,28 @@ const squat: Exercise = {
     ],
     judge: (w) => {
         const problems: string[] = []
-        if ((w.thigh ?? 0) < -22) problems.push('Go lower next time')
-        if ((w.lean ?? 0) > 40) problems.push('Keep your chest up')
-        if ((w.headUp ?? 0) < -38) problems.push('Lift your chin, look a few metres ahead')
-        if ((w.balance ?? 0) > 50) problems.push('Sit back, your weight is on your toes')
+        const thigh = w.thigh ?? 0
+        const lean = w.lean ?? 0
+        const head = w.headUp ?? 0
+        const balance = w.balance ?? 0
+        const leaning = lean > 40
+
+        // depth
+              if (thigh < -35) problems.push('Go much lower, aim for thighs parallel to the floor. A slightly wider stance with toes turned out can help')
+        else if (thigh < -22) problems.push('Almost there, go a little lower')
+
+        // forward lean
+        if (lean > 50) problems.push('Too much forward lean, push your chest up and keep your back straight')
+        else if (leaning) problems.push('Lift your chest a little')
+
+        // looking down
+        if (head < -50) problems.push('Look up, your eyes are on the floor')
+        else if (head < -38) problems.push('Lift your chin, look a few metres ahead')
+
+        // weight on toes (only when not leaning)
+        if (!leaning && balance > 70) problems.push('Your weight is far onto your toes, sit back into your heels')
+        else if (!leaning && balance > 50) problems.push('Shift your weight back towards the middle of your foot')
+
         return problems
     },
 }
