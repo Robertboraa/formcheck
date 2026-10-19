@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { LEFT, RIGHT, type Exercise, type Frame } from './exercises'
+function say(text: string) {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.rate = 1.1
+  window.speechSynthesis.speak(utterance)
+}
 
 type Props = {
   file: File | null
@@ -142,6 +149,7 @@ function Camera({ file, exercise, onRep }: Props) {
                 startTorso = torso
                 baseline = { ...smooth }
                 setStatus(exercise.readyText)
+                say('Ready')
               }
             }
 
@@ -154,6 +162,7 @@ function Camera({ file, exercise, onRep }: Props) {
               readyFrames = 0
               worst = {}
               setStatus('Paused. Get back into position')
+              say('Paused')
             }
 
             // 1. top → going down
@@ -188,6 +197,8 @@ function Camera({ file, exercise, onRep }: Props) {
               const line = [verdict, ...numbers].join(' | ')
               setFeedback(line)
               onRep(line)
+              const cue = problems.length === 0 ? 'good' : problems[0].split(/[.,]/)[0]
+say(`${repCount}, ${cue}`)
               worst = {}
             }
 
@@ -236,6 +247,7 @@ function Camera({ file, exercise, onRep }: Props) {
       stopped = true
       stream?.getTracks().forEach((track) => track.stop())
       model?.close()
+      window.speechSynthesis?.cancel()
     }
   }, [file, exercise, onRep])
 
