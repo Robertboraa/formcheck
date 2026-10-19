@@ -161,7 +161,7 @@ const squat: Exercise = {
         const leaning = lean > 40
 
         // depth
-              if (thigh < -35) problems.push('Go much lower, aim for thighs parallel to the floor. A slightly wider stance with toes turned out can help')
+        if (thigh < -35) problems.push('Go much lower, aim for thighs parallel to the floor. A slightly wider stance with toes turned out can help')
         else if (thigh < -22) problems.push('Almost there, go a little lower')
 
         // forward lean
@@ -196,11 +196,14 @@ const dips: Exercise = {
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
+            // how much the knee angle changes from the start position: bent legs are fine, kicking isn't
             key: 'legs',
-            label: 'legs',
+            label: 'leg movement',
             unit: '°',
-            worst: 'min',
+            worst: 'max',
             needs: ['hip', 'knee', 'ankle'],
+            fromBaseline: true,
+            abs: true,
             get: ({ p, j }) => angle(p(j.hip), p(j.knee), p(j.ankle)),
         },
         {
@@ -235,11 +238,80 @@ const dips: Exercise = {
     // placeholders until the numbers from real clips are in
     judge: (w) => {
         const problems: string[] = []
-        if ((w.depth ?? 180) > 100) problems.push('Go lower, upper arms to parallel')
+        if ((w.depth ?? 0) > 100) problems.push('Go lower, upper arms to parallel')
         if ((w.depth ?? 180) < 60) problems.push("Don't sink so deep")
-        if ((w.legs ?? 180) < 140) problems.push('Keep your legs straight')
+        if ((w.legs ?? 0) > 25) problems.push("Keep your legs still, don't kick")
         return problems
     },
 }
 
-export const EXERCISES: Exercise[] = [squat, dips]
+
+// ---------- push-ups ----------
+
+// how far the hip sits below the straight shoulder-to-ankle line, as % of body length
+// positive = hips sagging towards the floor, negative = hips piked up
+function hipOffset({ p, j }: Frame) {
+    const s = p(j.shoulder)
+    const a = p(j.ankle)
+    const h = p(j.hip)
+    const t = (h.x - s.x) / (a.x - s.x || 1)
+    const lineY = s.y + t * (a.y - s.y)
+    return ((h.y - lineY) / (dist(s, a) || 1)) * 100
+}
+
+const pushup: Exercise = {
+    id: 'pushup',
+    name: 'Push-ups',
+    readyText: 'Ready. Start your push-ups',
+    mainLabel: 'Elbow',
+    main: elbowAngle,
+    mainNeeds: ['shoulder', 'elbow', 'wrist'],
+    topAbove: 150,
+    downBelow: 120,
+    measures: [
+        { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
+        {
+            key: 'sag',
+            label: 'sag',
+            unit: '%',
+            worst: 'max',
+            needs: ['shoulder', 'hip', 'ankle'],
+            get: hipOffset,
+        },
+        {
+            key: 'pike',
+            label: 'pike',
+            unit: '%',
+            worst: 'min',
+            needs: ['shoulder', 'hip', 'ankle'],
+            get: hipOffset,
+        },
+        {
+            key: 'body',
+            label: 'body line',
+            unit: '°',
+            worst: 'min',
+            needs: ['shoulder', 'hip', 'ankle'],
+            get: ({ p, j }) => angle(p(j.shoulder), p(j.hip), p(j.ankle)),
+        },
+        {
+            key: 'neck',
+            label: 'neck',
+            unit: '°',
+            worst: 'min',
+            needs: ['ear', 'shoulder', 'hip'],
+            get: ({ p, j }) => angle(p(j.ear), p(j.shoulder), p(j.hip)),
+        },
+    ],
+    // placeholders until the numbers from real clips are in
+    judge: (w) => {
+        const problems: string[] = []
+        if ((w.depth ?? 0) > 100) problems.push('Go lower, chest closer to the floor')
+        if ((w.sag ?? 0) > 6) problems.push('Squeeze your glutes, your hips are sagging')
+        if ((w.pike ?? 0) < -8) problems.push('Lower your hips, keep your body in a straight line')
+        if ((w.pike ?? 0) < -3) problems.push('Lower your hips, keep your body in a straight line')
+        return problems
+    },
+}
+
+export const EXERCISES: Exercise[] = [squat, dips, pushup]
