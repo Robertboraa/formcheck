@@ -57,8 +57,8 @@ export type Exercise = {
     mainLabel: string
     main: (f: Frame) => number // the angle that drives rep counting and the chart
     mainNeeds: (keyof Joints)[]
-    topAbove: number // main angle above this = top of the rep (and ready position)
-    downBelow: number // main angle below this = a rep has started
+    topAbove: number // main angle must be above this to be ready to start
+    range: number // a rep = the main angle moving down then back up by at least this much
     measures: Measure[]
     judge: (w: Record<string, number | undefined>) => string[]
 }
@@ -81,7 +81,7 @@ const squat: Exercise = {
     main: kneeAngle,
     mainNeeds: ['hip', 'knee', 'ankle'],
     topAbove: 160,
-    downBelow: 130,
+    range: 30,
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: kneeAngle }, {
             // thigh angle from horizontal at the bottom: 0 = parallel, positive = hip below knee
@@ -192,7 +192,7 @@ const dips: Exercise = {
     main: elbowAngle,
     mainNeeds: ['shoulder', 'elbow', 'wrist'],
     topAbove: 150,
-    downBelow: 120,
+    range: 15,
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
@@ -245,7 +245,6 @@ const dips: Exercise = {
     },
 }
 
-
 // ---------- push-ups ----------
 
 // how far the hip sits below the straight shoulder-to-ankle line, as % of body length
@@ -266,8 +265,8 @@ const pushup: Exercise = {
     mainLabel: 'Elbow',
     main: elbowAngle,
     mainNeeds: ['shoulder', 'elbow', 'wrist'],
-    topAbove: 150,
-    downBelow: 120,
+    topAbove: 120,
+    range: 15,
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
@@ -307,8 +306,8 @@ const pushup: Exercise = {
     judge: (w) => {
         const problems: string[] = []
         if ((w.depth ?? 0) > 100) problems.push('Go lower, chest closer to the floor')
+        if ((w.top ?? 180) < 150) problems.push('Go higher at the top')
         if ((w.sag ?? 0) > 6) problems.push('Squeeze your glutes, your hips are sagging')
-        if ((w.pike ?? 0) < -8) problems.push('Lower your hips, keep your body in a straight line')
         if ((w.pike ?? 0) < -3) problems.push('Lower your hips, keep your body in a straight line')
         return problems
     },

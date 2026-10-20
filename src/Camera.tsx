@@ -100,6 +100,8 @@ function Camera({ file, exercise, onRep }: Props) {
             let lastTime = -1
             let startX = 0
             let startTorso = 0
+            let top = 0 // highest main angle since the last rep (how far the user straightened)
+            let bottom = 180 // lowest main angle in the current rep (how deep the user went)
 
             // smoothed values (remembered between frames), the values at the ready
             // position, and the worst value of each measurement during the current rep
@@ -107,8 +109,9 @@ function Camera({ file, exercise, onRep }: Props) {
             let baseline: Record<string, number> = {}
             let worst: Record<string, number | undefined> = {}
 
-            function blend(key: string, value: number) {
-                smooth[key] = key in smooth ? smooth[key] * 0.7 + value * 0.3 : value
+            // keep = how much of the previous value to keep (more = smoother but slower to react)
+            function blend(key: string, value: number, keep = 0.7) {
+                smooth[key] = key in smooth ? smooth[key] * keep + value * (1 - keep) : value
                 return smooth[key]
             }
 
@@ -144,7 +147,7 @@ function Camera({ file, exercise, onRep }: Props) {
                         const allSeen = (names: (keyof typeof j)[]) => names.every((name) => seen(j[name]))
 
                         // measurements
-                        const main = blend('main', exercise.main(frame))
+                        const main = blend('main', exercise.main(frame), 0.5) // lighter smoothing so fast reps aren't missed
                         const values: Record<string, number> = {}
                         for (const m of exercise.measures) {
                             let v = blend(m.key, m.get(frame))
@@ -171,6 +174,7 @@ function Camera({ file, exercise, onRep }: Props) {
                                 startX = px(j.hip).x
                                 startTorso = torso
                                 baseline = { ...smooth }
+                                top = main
                                 setStatus(exercise.readyText)
                                 say('Ready')
                             }
@@ -188,13 +192,21 @@ function Camera({ file, exercise, onRep }: Props) {
                             say('Paused')
                         }
 
-                        // 1. top → going down
-                        if (stage === 'up' && main < exercise.downBelow) {
-                            stage = 'down'
+                        // a rep is the main angle moving down by at least `range` from the top,
+                        // then back up by at least `range` from the bottom, wherever those are
+
+                        // 1. at the top: remember the highest point, start a rep once it drops far enough
+                        if (stage === 'up') {
+                            if (main > top) top = main
+                            if (main < top - exercise.range) {
+                                stage = 'down'
+                                bottom = main
+                            }
                         }
 
-                        // 2. while down, remember the worst value of each measurement
+                        // 2. going down: remember the lowest point and the worst value of each measurement
                         if (stage === 'down') {
+                            if (main < bottom) bottom = main
                             for (const m of exercise.measures) {
                                 if (m.needs && !allSeen(m.needs)) continue
                                 const v = values[m.key]
@@ -205,19 +217,20 @@ function Camera({ file, exercise, onRep }: Props) {
                             }
                         }
 
-                        // 3. back at the top → count the rep and judge it
-                        if (stage === 'down' && main > exercise.topAbove) {
+                        // 3. coming back up far enough → count the rep and judge it
+                        if (stage === 'down' && main > bottom + exercise.range) {
                             stage = 'up'
                             repCount = repCount + 1
                             setReps(repCount)
 
+                            worst.top = top
                             const problems = exercise.judge(worst)
                             const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
                             const numbers = exercise.measures.map((m) => {
                                 const v = worst[m.key]
                                 return `${m.label} ${v === undefined ? '–' : v.toFixed(0)}${m.unit}`
                             })
-                            const line = [verdict, ...numbers].join(' | ')
+                            const line = [verdict, ...numbers, `top ${top.toFixed(0)}°`].join(' | ')
                             setFeedback(line)
                             onRep(line)
                             const cue = problems.length === 0 ? 'good' : problems[0].split(/[.,]/)[0]
@@ -229,6 +242,7 @@ function Camera({ file, exercise, onRep }: Props) {
                             clearTimeout(flashTimer)
                             flashTimer = setTimeout(() => setFlash(null), 1500)
                             worst = {}
+                            top = main
                         }
 
                         // angle chart
