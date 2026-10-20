@@ -115,7 +115,6 @@ Needs Node 20 or newer.
 
 ```bash
 npm install
-cp -r node_modules/@mediapipe/tasks-vision/wasm public/wasm
 npm run dev
 ```
 
@@ -142,6 +141,8 @@ src/
   App.tsx         screens: start (exercise picker), session, summary
   Camera.tsx      video source, pose model, frame loop, rep state machine, drawing
   exercises.ts    one entry per exercise: thresholds, measurements, rules
+scripts/
+  copy-wasm.mjs   copies MediaPipe's WebAssembly files into public/wasm after npm install
 vite.config.ts    HTTPS dev server, reachable on the local network
 ```
 

@@ -1,13 +1,14 @@
 {
   "name": "formcheck",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node scripts/copy-wasm.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0",
