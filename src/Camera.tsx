@@ -43,11 +43,14 @@ function Camera({ file, exercise, onRep }: Props) {
     const [reps, setReps] = useState(0)
     const [status, setStatus] = useState('Get into position, side-on, with your whole body in view')
     const [feedback, setFeedback] = useState('')
+    const [flash, setFlash] = useState<'good' | 'bad' | null>(null)
+    const [banner, setBanner] = useState('')
 
     useEffect(() => {
         let stream: MediaStream | null = null
         let model: PoseLandmarker | null = null
         let stopped = false
+        let flashTimer: ReturnType<typeof setTimeout> | undefined
 
         async function start() {
             // video source: an uploaded file, or the live camera
@@ -219,6 +222,12 @@ function Camera({ file, exercise, onRep }: Props) {
                             onRep(line)
                             const cue = problems.length === 0 ? 'good' : problems[0].split(/[.,]/)[0]
                             say(`${repCount}, ${cue}`)
+
+                            // flash the video edge green or amber, and show the cue big
+                            setFlash(problems.length === 0 ? 'good' : 'bad')
+                            setBanner(problems.length === 0 ? 'Good rep' : cue)
+                            clearTimeout(flashTimer)
+                            flashTimer = setTimeout(() => setFlash(null), 1500)
                             worst = {}
                         }
 
@@ -268,6 +277,7 @@ function Camera({ file, exercise, onRep }: Props) {
             stream?.getTracks().forEach((track) => track.stop())
             model?.close()
             window.speechSynthesis?.cancel()
+            clearTimeout(flashTimer)
         }
     }, [file, exercise, onRep])
 
@@ -283,9 +293,35 @@ function Camera({ file, exercise, onRep }: Props) {
     return (
         <div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                <div style={{ position: 'relative', flex: 1, height: '70vh', background: 'black' }}>
+                <div
+                    style={{
+                        position: 'relative',
+                        flex: 1,
+                        height: '70vh',
+                        background: 'black',
+                        boxShadow: flash ? `inset 0 0 0 10px ${flash === 'good' ? '#22c55e' : '#f59e0b'}` : 'none',
+                        transition: 'box-shadow 0.2s',
+                    }}
+                >
                     <video ref={videoRef} autoPlay playsInline muted style={layer} />
                     <canvas ref={canvasRef} style={layer} />
+
+                    {/* big rep counter and cue, readable from a few metres away */}
+                    <div style={{ position: 'absolute', top: 20, left: 24, color: 'white', textShadow: '0 2px 8px black' }}>
+                        <div style={{ fontSize: 96, fontWeight: 800, lineHeight: 1 }}>{reps}</div>
+                        {flash && (
+                            <div
+                                style={{
+                                    marginTop: 8,
+                                    fontSize: 28,
+                                    fontWeight: 700,
+                                    color: flash === 'good' ? '#22c55e' : '#f59e0b',
+                                }}
+                            >
+                                {banner}
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div style={{ flex: 1 }}>
                     <canvas ref={chartRef} width={600} height={340} style={{ width: '100%', background: '#0a1630' }} />
