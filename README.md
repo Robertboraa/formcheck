@@ -15,7 +15,8 @@ Work in progress.
 | Exercise | Rep counting | Form rules | Thresholds |
 |---|---|---|---|
 | Bodyweight squat | Done | Depth, forward lean, looking down, weight on toes | Set from recorded clips, tested on new people and a public dataset |
-| Dips | Done | Depth, too deep, bent legs | Placeholders, calibration in progress |
+| Dips | Done | Depth, too deep, leg kicking | Placeholders, calibration in progress |
+| Push-ups | Done | Depth, hips sagging, hips piked | Placeholders, calibration in progress |
 | Pull-ups | Planned | | |
 | Dumbbell shoulder press | Planned | | |
 
@@ -25,6 +26,8 @@ Work in progress.
 - **Skeleton overlay** on the video, with a **live joint-angle chart** beside it.
 - **Hands-free rep counting.** The app waits until you are in position before it starts counting, and pauses when you walk away.
 - **Works from either side.** It picks whichever side of the body faces the camera.
+- **Spoken cues.** After every rep the app says the rep number and the main cue out loud ("4, almost there"), in a British English voice, so you don't need to look at the screen mid-set.
+- **Feedback scaled to the fault.** A rep that's nearly right gets a gentle nudge; a clearly wrong one gets a stronger cue with a tip.
 - **Per-rep feedback.** Every rep gets a verdict and its measurements, for example:
   `Go lower next time | depth 96° | thigh -40° | lean 25° | head up -27° | balance 42%`
 - **Session summary** with totals, the full rep log, and a button to copy the results.
@@ -63,9 +66,26 @@ worst value of each measurement during the rep  →  rules  →  verdict and cue
 | Looking down | Tilt of the ear-to-nose line | Below -38° |
 | Weight on the toes | Centre-of-mass estimate along the foot (0% heel, 100% toes) | Above 50%, only when not leaning |
 
-## How the rules were found
+## Dips and push-up rules
 
-Every rule started as a measurement printed in the log, with no rule attached. A threshold was only added once recorded clips showed the measurement separating good reps from faulty ones.
+Both use the elbow angle to count reps (below 120° starts a rep, above 150° finishes it). Their thresholds are first guesses and will be set from recorded clips, the same way as the squat.
+
+| Exercise | Fault | Measured by | Flags when |
+|---|---|---|---|
+| Dips | Not deep enough | Smallest elbow angle | Above 100° |
+| Dips | Too deep | Smallest elbow angle | Below 60° |
+| Dips | Kicking the legs | Change in knee angle from the start position | More than 25° |
+| Push-ups | Not deep enough | Smallest elbow angle | Above 100° |
+| Push-ups | Hips sagging | Hip distance below the shoulder-to-ankle line, as % of body length | Above 6% |
+| Push-ups | Hips piked up | The same measurement, hips above the line | Below -3% |
+
+On dips, bent legs are allowed, since many people cross their feet when the bars are low. The rule only checks that the legs stay still, comparing each rep against the leg position at the start.
+
+The app also logs measurements that don't have rules yet, such as shoulder shrug and hip swing on dips, and neck position on push-ups.
+
+## How the squat rules were found
+
+Every squat rule started as a measurement printed in the log, with no rule attached. A threshold was only added once recorded clips showed the measurement separating good reps from faulty ones.
 
 **Weight on the toes.** A participant kept his weight on his toes, with his heels only lifting on some reps. Depth, lean and neck angles couldn't tell his reps apart from good ones, so a new measurement was added: an estimate of the body's centre of mass, placed along the foot.
 
@@ -126,13 +146,14 @@ Put the phone on the same Wi-Fi as your computer and open the `Network:` address
 
 ### Filming tips
 
-- Phone fixed in place at about hip height, roughly 3 metres away, side-on.
-- Whole body in frame, standing still for a moment before the first rep.
+- Phone fixed in place, roughly 3 metres away, side-on, with the whole body in frame.
+- **Squats:** phone at hip height. **Dips:** chest height, with the feet in view. **Push-ups:** low, near floor-to-knee height.
+- Hold the start position still for a moment before the first rep: standing for squats, arms straight for dips and push-ups.
 - Uploaded videos must be **H.264**. iPhone videos (HEVC) and some dataset videos won't play or will lag. On an iPhone, record with **Formats > Most Compatible**; to convert existing files:
 
-  ```bash
+```bash
   for f in *.mp4; do ffmpeg -i "$f" -c:v libx264 -pix_fmt yuv420p -crf 20 -an "converted/$f"; done
-  ```
+```
 
 ## Project structure
 
@@ -157,7 +178,9 @@ vite.config.ts    HTTPS dev server, reachable on the local network
 
 ## Roadmap
 
-- [ ] Calibrate dips from recorded clips
+- [ ] Calibrate dips and push-ups from recorded clips
+- [ ] Rules for shoulder shrug on dips and head position on push-ups
+- [ ] Big rep counter with colour feedback, and a setup check with countdown
 - [ ] Pull-ups and dumbbell shoulder press
 - [ ] Precision, recall and rep-count accuracy on the full dataset
 - [ ] Bundle the pose model so the app works offline
