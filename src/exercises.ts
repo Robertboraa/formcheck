@@ -196,6 +196,16 @@ const dips: Exercise = {
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
+            // upper arm angle from horizontal at the bottom: 0 = parallel, positive = shoulder below elbow
+            key: 'arm',
+            label: 'upper arm',
+            unit: '°',
+            worst: 'max',
+            needs: ['shoulder', 'elbow'],
+            get: ({ p, j }) =>
+                (Math.atan2(p(j.shoulder).y - p(j.elbow).y, Math.abs(p(j.shoulder).x - p(j.elbow).x)) * 180) / Math.PI,
+        },
+        {
             // how much the knee angle changes from the start position: bent legs are fine, kicking isn't
             key: 'legs',
             label: 'leg movement',
@@ -303,12 +313,14 @@ const pushup: Exercise = {
         },
     ],
     // placeholders until the numbers from real clips are in
+        // thresholds set from recorded clips: good, shallow, sagging, piked, no lockout, head down
     judge: (w) => {
         const problems: string[] = []
-        if ((w.depth ?? 0) > 100) problems.push('Go lower, chest closer to the floor')
+        if ((w.sag ?? 0) > 7.5) problems.push('Squeeze your glutes, your hips are sagging')
+        if ((w.pike ?? 0) < -7) problems.push('Lower your hips, keep your body in a straight line')
+        if ((w.depth ?? 0) > 62) problems.push('Go lower, chest closer to the floor')
         if ((w.top ?? 180) < 150) problems.push('Go higher at the top')
-        if ((w.sag ?? 0) > 6) problems.push('Squeeze your glutes, your hips are sagging')
-        if ((w.pike ?? 0) < -3) problems.push('Lower your hips, keep your body in a straight line')
+        if ((w.neck ?? 180) < 135) problems.push('Keep your head in line, look at the floor just ahead of your hands')
         return problems
     },
 }

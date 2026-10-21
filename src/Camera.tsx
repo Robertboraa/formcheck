@@ -102,6 +102,8 @@ function Camera({ file, exercise, onRep }: Props) {
             let startTorso = 0
             let top = 0 // highest main angle since the last rep (how far the user straightened)
             let bottom = 180 // lowest main angle in the current rep (how deep the user went)
+            let startShoulderY = 0 // shoulder height at the ready position
+            let lowestShoulderY = 0 // lowest the shoulder got in the current rep (bigger y = lower)
 
             // smoothed values (remembered between frames), the values at the ready
             // position, and the worst value of each measurement during the current rep
@@ -155,6 +157,7 @@ function Camera({ file, exercise, onRep }: Props) {
                             if (m.abs) v = Math.abs(v)
                             values[m.key] = v
                         }
+                        const shoulderY = blend('shoulderY', px(j.shoulder).y)
                         const torso = Math.hypot(px(j.shoulder).x - px(j.hip).x, px(j.shoulder).y - px(j.hip).y)
 
                         frameCount = frameCount + 1
@@ -175,6 +178,7 @@ function Camera({ file, exercise, onRep }: Props) {
                                 startTorso = torso
                                 baseline = { ...smooth }
                                 top = main
+                                startShoulderY = shoulderY
                                 setStatus(exercise.readyText)
                                 say('Ready')
                             }
@@ -183,8 +187,12 @@ function Camera({ file, exercise, onRep }: Props) {
                         // pause if the user leaves their spot
                         const moved = Math.abs(px(j.hip).x - startX) > startTorso
                         const resized = Math.abs(torso - startTorso) > startTorso * 0.25
+                        // body far above the start height = climbed on (e.g. jumped onto the dip bars)
+                        const climbed = startShoulderY - shoulderY > startTorso * 0.25
+                        // body far below the start height with arms/legs straight = stepped off
+                        const steppedOff = shoulderY - startShoulderY > startTorso * 0.3 && main > exercise.topAbove
 
-                        if (stage !== 'waiting' && (moved || resized)) {
+                        if (stage !== 'waiting' && (moved || resized || climbed || steppedOff)) {
                             stage = 'waiting'
                             readyFrames = 0
                             worst = {}
@@ -201,12 +209,14 @@ function Camera({ file, exercise, onRep }: Props) {
                             if (main < top - exercise.range) {
                                 stage = 'down'
                                 bottom = main
+                                lowestShoulderY = shoulderY
                             }
                         }
 
                         // 2. going down: remember the lowest point and the worst value of each measurement
                         if (stage === 'down') {
                             if (main < bottom) bottom = main
+                            if (shoulderY > lowestShoulderY) lowestShoulderY = shoulderY
                             for (const m of exercise.measures) {
                                 if (m.needs && !allSeen(m.needs)) continue
                                 const v = values[m.key]
@@ -218,12 +228,16 @@ function Camera({ file, exercise, onRep }: Props) {
                         }
 
                         // 3. coming back up far enough → count the rep and judge it
-                        if (stage === 'down' && main > bottom + exercise.range) {
+                        // (the body must actually rise too, so straightening the arms while
+                        // stepping down off the bars doesn't count as a rep)
+                        const rose = lowestShoulderY - shoulderY > startTorso * 0.08
+                        if (stage === 'down' && main > bottom + exercise.range && rose) {
                             stage = 'up'
                             repCount = repCount + 1
                             setReps(repCount)
 
-                            worst.top = top
+                            // the first rep can start before the app has seen a full lockout, so skip that check
+                            if (repCount > 1) worst.top = top
                             const problems = exercise.judge(worst)
                             const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
                             const numbers = exercise.measures.map((m) => {
