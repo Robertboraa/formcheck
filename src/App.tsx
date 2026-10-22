@@ -1,17 +1,31 @@
-import { useCallback, useState } from 'react'
-import Camera, { shortCue } from './Camera'
-import { EXERCISES, type Rep } from './exercises'
-import Summary from './Summary'
+import { useCallback, useEffect, useState } from 'react'
+import Camera from './Camera'
+import { EXERCISES, findExercise, shortCue, type Rep } from './exercises'
+import Summary, { type SaveState } from './Summary'
+import Auth from './Auth'
+import History from './History'
+import { api, type SavedSession, type SessionSummary, type User } from './api'
+
+type Screen = 'start' | 'session' | 'summary' | 'auth' | 'history' | 'saved'
 
 function App() {
-  const [screen, setScreen] = useState<'start' | 'session' | 'summary'>('start')
+  const [screen, setScreen] = useState<Screen>('start')
   const [file, setFile] = useState<File | null>(null)
   const [reps, setReps] = useState<Rep[]>([])
   const [exerciseId, setExerciseId] = useState(EXERCISES[0].id)
+  const [user, setUser] = useState<User | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('guest')
+  const [previous, setPrevious] = useState<SessionSummary | undefined>()
+  const [saved, setSaved] = useState<SavedSession | null>(null)
 
   const exercise = EXERCISES.find((x) => x.id === exerciseId) ?? EXERCISES[0]
   const clipName = file?.name ?? 'Live camera'
   const addRep = useCallback((rep: Rep) => setReps((old) => [...old, rep]), [])
+
+  // stay signed in between visits: the API remembers the user with a cookie
+  useEffect(() => {
+    api.me().then(setUser).catch(() => setUser(null))
+  }, [])
 
   function begin(video: File | null) {
     setReps([])
@@ -19,18 +33,72 @@ function App() {
     setScreen('session')
   }
 
+  // save the set to the user's history, then find their previous one to compare with
+  async function finish() {
+    setPrevious(undefined)
+    setScreen('summary')
+    if (!user || reps.length === 0) {
+      setSaveState('guest')
+      return
+    }
+    setSaveState('saving')
+    try {
+      const { id } = await api.saveSession(exercise.id, clipName, reps)
+      setSaveState('saved')
+      const list = await api.sessions(exercise.id)
+      setPrevious(list.find((s) => s.id !== id))
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  async function openSaved(summary: SessionSummary, before: SessionSummary | undefined) {
+    const session = await api.session(summary.id)
+    setSaved(session)
+    setPrevious(before)
+    setScreen('saved')
+  }
+
+  async function signOut() {
+    await api.logout().catch(() => {})
+    setUser(null)
+    setScreen('start')
+  }
+
+  const savedExercise = saved ? findExercise(saved.exercise) : undefined
+
   return (
     <div className="app">
       <header className="topbar">
         <button className="brand" onClick={() => setScreen('start')}>
           <span className="brand-mark">◆</span> FormCheck
         </button>
-        {screen === 'session' && (
+        {screen === 'session' ? (
           <div className="topbar-right">
             <span className="muted">{exercise.name}</span>
-            <button className="btn primary" onClick={() => setScreen('summary')}>
+            <button className="btn primary" onClick={finish}>
               Finish
             </button>
+          </div>
+        ) : (
+          <div className="topbar-right">
+            {user ? (
+              <>
+                <button className="btn ghost" onClick={() => setScreen('history')}>
+                  History
+                </button>
+                <span className="muted user-email">{user.email}</span>
+                <button className="btn" onClick={signOut}>
+                  Sign out
+                </button>
+              </>
+            ) : (
+              screen !== 'auth' && (
+                <button className="btn" onClick={() => setScreen('auth')}>
+                  Sign in
+                </button>
+              )
+            )}
           </div>
         )}
       </header>
@@ -58,7 +126,49 @@ function App() {
       )}
 
       {screen === 'summary' && (
-        <Summary exercise={exercise} clipName={clipName} reps={reps} onRestart={() => setScreen('start')} />
+        <Summary
+          exercise={exercise}
+          clipName={clipName}
+          reps={reps}
+          onRestart={() => setScreen('start')}
+          saveState={saveState}
+          onSignIn={() => setScreen('auth')}
+          previous={previous}
+        />
+      )}
+
+      {screen === 'auth' && (
+        <Auth
+          onSignedIn={(u) => {
+            setUser(u)
+            setScreen('start')
+          }}
+          onCancel={() => setScreen('start')}
+        />
+      )}
+
+      {screen === 'history' && user && (
+        <History initialExercise={exerciseId} onOpen={openSaved} onStart={() => setScreen('start')} />
+      )}
+
+      {screen === 'saved' && saved && savedExercise && (
+        <Summary
+          exercise={savedExercise}
+          clipName={saved.source}
+          reps={saved.reps}
+          savedAt={saved.createdAt}
+          previous={previous}
+          onRestart={() => {
+            setExerciseId(savedExercise.id)
+            setScreen('start')
+          }}
+          onBack={() => setScreen('history')}
+          onDelete={async () => {
+            if (!window.confirm('Delete this session from your history?')) return
+            await api.deleteSession(saved.id)
+            setScreen('history')
+          }}
+        />
       )}
 
       {screen === 'start' && (
@@ -71,9 +181,17 @@ function App() {
               your coach.
             </h1>
             <p className="lead">
-              FormCheck watches you train, counts your reps and tells you what to fix after every one. It runs
-              entirely in your browser: your video never leaves your device.
+              FormCheck watches you train, counts your reps and tells you what to fix after every one. The video is
+              analysed in your browser and never leaves your device.
             </p>
+            {!user && (
+              <p className="hero-note muted">
+                <button className="link" onClick={() => setScreen('auth')}>
+                  Create a free account
+                </button>{' '}
+                to save your sessions and see your progress.
+              </p>
+            )}
           </section>
 
           <section className="card setup">

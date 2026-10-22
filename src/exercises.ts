@@ -56,6 +56,11 @@ export type Part = 'back' | 'hips' | 'legs' | 'arms' | 'head' | 'feet'
 // one problem found in a rep: the cue to show and say, and the body parts to colour
 export type Fault = { text: string; parts: Part[] }
 
+// the short version of a cue: everything before the first comma or full stop
+export function shortCue(text: string) {
+    return text.split(/[.,]/)[0]
+}
+
 function fault(text: string, ...parts: Part[]): Fault {
     return { text, parts }
 }
@@ -348,4 +353,8 @@ const pushup: Exercise = {
 
 // dips are left out of the picker for now: the bars hide the arms too often
 export const EXERCISES: Exercise[] = [squat, pushup]
-export const LATER = { dips }
+
+// looks up an exercise by id, including hidden ones, for opening saved sessions
+export function findExercise(id: string) {
+    return [squat, pushup, dips].find((x) => x.id === id)
+}

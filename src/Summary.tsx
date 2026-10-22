@@ -1,15 +1,35 @@
 import { useState } from 'react'
-import { shortCue } from './Camera'
-import type { Exercise, Rep } from './exercises'
+import { shortCue, type Exercise, type Rep } from './exercises'
+import { formatDate, scoreOf, type SessionSummary } from './api'
+import { Change } from './History'
+
+export type SaveState = 'guest' | 'saving' | 'saved' | 'error'
 
 type Props = {
     exercise: Exercise
     clipName: string
     reps: Rep[]
     onRestart: () => void
+    saveState?: SaveState // for a session that was just finished
+    onSignIn?: () => void
+    previous?: SessionSummary // the session before this one, to compare with
+    savedAt?: string // set when opening a saved session from history
+    onBack?: () => void
+    onDelete?: () => void
 }
 
-function Summary({ exercise, clipName, reps, onRestart }: Props) {
+function Summary({
+    exercise,
+    clipName,
+    reps,
+    onRestart,
+    saveState,
+    onSignIn,
+    previous,
+    savedAt,
+    onBack,
+    onDelete,
+}: Props) {
     const [copied, setCopied] = useState(false)
     const good = reps.filter((r) => r.good).length
     const score = reps.length ? Math.round((good / reps.length) * 100) : 0
@@ -24,6 +44,7 @@ function Summary({ exercise, clipName, reps, onRestart }: Props) {
     const best = ranked[0]
     const worst = ranked.length > 1 ? ranked[ranked.length - 1] : undefined
     const deepest = Math.max(...reps.map((r) => 180 - r.bottom), 1)
+    const avgBottom = reps.reduce((sum, r) => sum + r.bottom, 0) / (reps.length || 1)
 
     function copy() {
         const text = [
@@ -57,11 +78,21 @@ function Summary({ exercise, clipName, reps, onRestart }: Props) {
         <main className="summary">
             <section className="summary-head">
                 <div>
-                    <p className="eyebrow">Session summary</p>
+                    <p className="eyebrow">{savedAt ? formatDate(savedAt) : 'Session summary'}</p>
                     <h2>{exercise.name}</h2>
                     <p className="muted">{clipName}</p>
                 </div>
                 <div className="actions">
+                    {onBack && (
+                        <button className="btn" onClick={onBack}>
+                            ‹ History
+                        </button>
+                    )}
+                    {onDelete && (
+                        <button className="btn danger" onClick={onDelete}>
+                            Delete
+                        </button>
+                    )}
                     <button className="btn" onClick={copy}>
                         {copied ? 'Copied' : 'Copy results'}
                     </button>
@@ -70,6 +101,45 @@ function Summary({ exercise, clipName, reps, onRestart }: Props) {
                     </button>
                 </div>
             </section>
+
+            {saveState === 'saving' && <p className="save-note muted">Saving to your history…</p>}
+            {saveState === 'saved' && <p className="save-note good-text">✓ Saved to your history</p>}
+            {saveState === 'error' && <p className="save-note bad-text">Couldn't save this session. Is the API running?</p>}
+            {saveState === 'guest' && onSignIn && (
+                <p className="save-note muted">
+                    Not saved.{' '}
+                    <button className="link" onClick={onSignIn}>
+                        Sign in
+                    </button>{' '}
+                    to keep your sessions and compare them over time.
+                </p>
+            )}
+
+            {previous && (
+                <section className="card compare">
+                    <span className="label">Compared with your previous session ({formatDate(previous.createdAt)})</span>
+                    <div className="compare-grid">
+                        <div>
+                            <b>
+                                {scoreOf(previous)}% → {score}%
+                            </b>
+                            <Change value={score - scoreOf(previous)} unit="%" />
+                        </div>
+                        <div>
+                            <b>
+                                {previous.avgBottom.toFixed(0)}° → {avgBottom.toFixed(0)}° average depth
+                            </b>
+                            <Change value={previous.avgBottom - avgBottom} unit="°" deeper />
+                        </div>
+                        <div>
+                            <b>
+                                {previous.repCount} → {reps.length} reps
+                            </b>
+                            <Change value={reps.length - previous.repCount} unit={Math.abs(reps.length - previous.repCount) === 1 ? ' rep' : ' reps'} />
+                        </div>
+                    </div>
+                </section>
+            )}
 
             <section className="stats">
                 <div className="card score">

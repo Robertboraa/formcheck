@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
-import { LEFT, RIGHT, type Exercise, type Frame, type Joints, type Part, type Rep } from './exercises'
+import { LEFT, RIGHT, shortCue, type Exercise, type Frame, type Joints, type Part, type Rep } from './exercises'
 
 // pick a British English voice once the browser has loaded its voice list
 let britishVoice: SpeechSynthesisVoice | undefined
@@ -28,11 +28,6 @@ function say(text: string) {
     if (britishVoice) utterance.voice = britishVoice
     utterance.rate = 1.1
     window.speechSynthesis.speak(utterance)
-}
-
-// the short version of a cue: everything before the first comma or full stop
-export function shortCue(text: string) {
-    return text.split(/[.,]/)[0]
 }
 
 // which bones to colour for each body part, as pairs of landmark numbers

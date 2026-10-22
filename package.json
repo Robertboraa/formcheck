@@ -4,11 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n web,api -c green,blue \"vite\" \"npm --prefix server run dev\"",
+    "dev:web": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "postinstall": "node scripts/copy-wasm.mjs"
+    "test": "npm --prefix server test",
+    "postinstall": "node scripts/copy-wasm.mjs && npm --prefix server install"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0",
@@ -21,6 +23,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.6",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
