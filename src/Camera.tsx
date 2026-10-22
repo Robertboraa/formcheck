@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
-import { LEFT, RIGHT, type Exercise, type Frame } from './exercises'
+import { LEFT, RIGHT, type Exercise, type Frame, type Joints, type Part, type Rep } from './exercises'
+
 // pick a British English voice once the browser has loaded its voice list
 let britishVoice: SpeechSynthesisVoice | undefined
 
@@ -29,20 +30,47 @@ function say(text: string) {
     window.speechSynthesis.speak(utterance)
 }
 
+// the short version of a cue: everything before the first comma or full stop
+export function shortCue(text: string) {
+    return text.split(/[.,]/)[0]
+}
+
+// which bones to colour for each body part, as pairs of landmark numbers
+function bonesFor(part: Part, j: Joints): [number, number][] {
+    switch (part) {
+        case 'back':
+            return [[j.shoulder, j.hip]]
+        case 'hips':
+            return [[j.shoulder, j.hip], [j.hip, j.knee], [j.knee, j.ankle]]
+        case 'legs':
+            return [[j.hip, j.knee], [j.knee, j.ankle]]
+        case 'arms':
+            return [[j.shoulder, j.elbow], [j.elbow, j.wrist]]
+        case 'head':
+            return [[j.ear, j.shoulder], [0, j.ear]]
+        case 'feet':
+            return [[j.ankle, j.heel], [j.heel, j.toe], [j.ankle, j.toe]]
+    }
+}
+
+const GOOD = '#4ade80'
+const BAD = '#f97316'
+
 type Props = {
     file: File | null
     exercise: Exercise
-    onRep: (line: string) => void
+    onRep: (rep: Rep) => void
+    children?: ReactNode // shown under the live panel (the rep list)
 }
 
-function Camera({ file, exercise, onRep }: Props) {
+function Camera({ file, exercise, onRep, children }: Props) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const chartRef = useRef<HTMLCanvasElement>(null)
     const [mainValue, setMainValue] = useState(0)
     const [reps, setReps] = useState(0)
-    const [status, setStatus] = useState('Get into position, side-on, with your whole body in view')
-    const [feedback, setFeedback] = useState('')
+    const [status, setStatus] = useState<'loading' | 'waiting' | 'ready' | 'paused'>('loading')
+    const [lastRep, setLastRep] = useState<Rep | null>(null)
     const [flash, setFlash] = useState<'good' | 'bad' | null>(null)
     const [banner, setBanner] = useState('')
 
@@ -84,6 +112,7 @@ function Camera({ file, exercise, onRep }: Props) {
                 return
             }
             model = landmarker
+            setStatus('waiting')
 
             const video = videoRef.current
             const canvas = canvasRef.current
@@ -104,6 +133,11 @@ function Camera({ file, exercise, onRep }: Props) {
             let bottom = 180 // lowest main angle in the current rep (how deep the user went)
             let startShoulderY = 0 // shoulder height at the ready position
             let lowestShoulderY = 0 // lowest the shoulder got in the current rep (bigger y = lower)
+
+            // bones to colour after a rep (green = good rep, orange = where the fault is)
+            let highlight: [number, number][] = []
+            let highlightColour = GOOD
+            let highlightUntil = 0
 
             // smoothed values (remembered between frames), the values at the ready
             // position, and the worst value of each measurement during the current rep
@@ -179,7 +213,7 @@ function Camera({ file, exercise, onRep }: Props) {
                                 baseline = { ...smooth }
                                 top = main
                                 startShoulderY = shoulderY
-                                setStatus(exercise.readyText)
+                                setStatus('ready')
                                 say('Ready')
                             }
                         }
@@ -196,7 +230,7 @@ function Camera({ file, exercise, onRep }: Props) {
                             stage = 'waiting'
                             readyFrames = 0
                             worst = {}
-                            setStatus('Paused. Get back into position')
+                            setStatus('paused')
                             say('Paused')
                         }
 
@@ -238,23 +272,38 @@ function Camera({ file, exercise, onRep }: Props) {
 
                             // the first rep can start before the app has seen a full lockout, so skip that check
                             if (repCount > 1) worst.top = top
-                            const problems = exercise.judge(worst)
-                            const verdict = problems.length === 0 ? 'Good rep' : problems.join(' and ')
+                            const faults = exercise.judge(worst)
+                            const good = faults.length === 0
                             const numbers = exercise.measures.map((m) => {
                                 const v = worst[m.key]
-                                return `${m.label} ${v === undefined ? '–' : v.toFixed(0)}${m.unit}`
+                                return { label: m.label, value: `${v === undefined ? '–' : v.toFixed(0)}${m.unit}` }
                             })
-                            const line = [verdict, ...numbers, `top ${top.toFixed(0)}°`].join(' | ')
-                            setFeedback(line)
-                            onRep(line)
-                            const cue = problems.length === 0 ? 'good' : problems[0].split(/[.,]/)[0]
+                            numbers.push({ label: 'top', value: `${top.toFixed(0)}°` })
+                            const verdict = good ? 'Good rep' : faults.map((f) => f.text).join(' and ')
+                            const rep: Rep = {
+                                n: repCount,
+                                good,
+                                faults: faults.map((f) => f.text),
+                                numbers,
+                                bottom,
+                                top,
+                                line: [verdict, ...numbers.map((x) => `${x.label} ${x.value}`)].join(' | '),
+                            }
+                            setLastRep(rep)
+                            onRep(rep)
+                            const cue = good ? 'good' : shortCue(faults[0].text)
                             say(`${repCount}, ${cue}`)
 
-                            // flash the video edge green or amber, and show the cue big
-                            setFlash(problems.length === 0 ? 'good' : 'bad')
-                            setBanner(problems.length === 0 ? 'Good rep' : cue)
+                            // flash the video edge, show the cue big, and colour the body part at fault
+                            setFlash(good ? 'good' : 'bad')
+                            setBanner(good ? 'Good rep' : cue)
                             clearTimeout(flashTimer)
                             flashTimer = setTimeout(() => setFlash(null), 1500)
+                            highlight = good
+                                ? bonesFor('hips', j).concat(bonesFor('arms', j))
+                                : faults.flatMap((f) => f.parts.flatMap((part) => bonesFor(part, j)))
+                            highlightColour = good ? GOOD : BAD
+                            highlightUntil = performance.now() + 1500
                             worst = {}
                             top = main
                         }
@@ -264,8 +313,19 @@ function Camera({ file, exercise, onRep }: Props) {
                         if (history.length > 300) history.shift()
 
                         chartCtx.clearRect(0, 0, chart.width, chart.height)
-                        chartCtx.strokeStyle = 'cyan'
+                        // faint guide lines every 45°
+                        chartCtx.strokeStyle = 'rgba(255,255,255,0.08)'
+                        chartCtx.lineWidth = 1
+                        for (const deg of [45, 90, 135]) {
+                            const y = chart.height - (deg / 180) * chart.height
+                            chartCtx.beginPath()
+                            chartCtx.moveTo(0, y)
+                            chartCtx.lineTo(chart.width, y)
+                            chartCtx.stroke()
+                        }
+                        chartCtx.strokeStyle = GOOD
                         chartCtx.lineWidth = 3
+                        chartCtx.lineJoin = 'round'
                         chartCtx.beginPath()
                         for (let i = 0; i < history.length; i++) {
                             const x = (i / 300) * chart.width
@@ -276,8 +336,9 @@ function Camera({ file, exercise, onRep }: Props) {
                         chartCtx.stroke()
 
                         // skeleton: bones
-                        ctx.strokeStyle = 'cyan'
+                        ctx.strokeStyle = 'rgba(255,255,255,0.75)'
                         ctx.lineWidth = 4
+                        ctx.lineCap = 'round'
                         for (const { start, end } of PoseLandmarker.POSE_CONNECTIONS) {
                             ctx.beginPath()
                             ctx.moveTo(px(start).x, px(start).y)
@@ -285,11 +346,23 @@ function Camera({ file, exercise, onRep }: Props) {
                             ctx.stroke()
                         }
 
+                        // skeleton: coloured bones after a rep
+                        if (performance.now() < highlightUntil) {
+                            ctx.strokeStyle = highlightColour
+                            ctx.lineWidth = 12
+                            for (const [a, b] of highlight) {
+                                ctx.beginPath()
+                                ctx.moveTo(px(a).x, px(a).y)
+                                ctx.lineTo(px(b).x, px(b).y)
+                                ctx.stroke()
+                            }
+                        }
+
                         // skeleton: joints
-                        ctx.fillStyle = 'white'
+                        ctx.fillStyle = GOOD
                         for (let i = 0; i < landmarks.length; i++) {
                             ctx.beginPath()
-                            ctx.arc(px(i).x, px(i).y, 6, 0, Math.PI * 2)
+                            ctx.arc(px(i).x, px(i).y, 5, 0, Math.PI * 2)
                             ctx.fill()
                         }
                     }
@@ -309,58 +382,62 @@ function Camera({ file, exercise, onRep }: Props) {
         }
     }, [file, exercise, onRep])
 
-    const layer = {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain',
-    } as const
+    const statusText = {
+        loading: 'Loading the pose model…',
+        waiting: 'Get into position, side-on, with your whole body in view',
+        ready: exercise.readyText,
+        paused: 'Paused. Get back into position',
+    }[status]
 
     return (
-        <div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                <div
-                    style={{
-                        position: 'relative',
-                        flex: 1,
-                        height: '70vh',
-                        background: 'black',
-                        boxShadow: flash ? `inset 0 0 0 10px ${flash === 'good' ? '#22c55e' : '#f59e0b'}` : 'none',
-                        transition: 'box-shadow 0.2s',
-                    }}
-                >
-                    <video ref={videoRef} autoPlay playsInline muted style={layer} />
-                    <canvas ref={canvasRef} style={layer} />
+        <div className="session-grid">
+            <div className={`stage ${flash ?? ''}`}>
+                <video ref={videoRef} autoPlay playsInline muted />
+                <canvas ref={canvasRef} />
 
-                    {/* big rep counter and cue, readable from a few metres away */}
-                    <div style={{ position: 'absolute', top: 20, left: 24, color: 'white', textShadow: '0 2px 8px black' }}>
-                        <div style={{ fontSize: 96, fontWeight: 800, lineHeight: 1 }}>{reps}</div>
-                        {flash && (
-                            <div
-                                style={{
-                                    marginTop: 8,
-                                    fontSize: 28,
-                                    fontWeight: 700,
-                                    color: flash === 'good' ? '#22c55e' : '#f59e0b',
-                                }}
-                            >
-                                {banner}
-                            </div>
-                        )}
-                    </div>
+                {/* big rep counter and cue, readable from a few metres away */}
+                <div className="counter">
+                    <div className="counter-number">{reps}</div>
+                    <div className="counter-label">reps</div>
                 </div>
-                <div style={{ flex: 1 }}>
-                    <canvas ref={chartRef} width={600} height={340} style={{ width: '100%', background: '#0a1630' }} />
+                {flash && <div className={`banner ${flash}`}>{banner}</div>}
+                <div className={`status-pill ${status}`}>
+                    <span className="dot" />
+                    {statusText}
                 </div>
             </div>
-            <p>Status: {status}</p>
-            <p>
-                {exercise.mainLabel}: {mainValue.toFixed(0)}°
-            </p>
-            <p>Reps: {reps}</p>
-            <p>{feedback}</p>
+
+            <aside className="panel">
+                <div className="card">
+                    <div className="card-row">
+                        <span className="label">{exercise.mainLabel} angle</span>
+                        <span className="live-value">{mainValue.toFixed(0)}°</span>
+                    </div>
+                    <canvas ref={chartRef} width={600} height={220} className="chart" />
+                </div>
+
+                <div className="card">
+                    <span className="label">Last rep</span>
+                    {lastRep ? (
+                        <>
+                            <p className={`verdict ${lastRep.good ? 'good' : 'bad'}`}>
+                                {lastRep.good ? 'Good rep' : lastRep.faults.map(shortCue).join(' · ')}
+                            </p>
+                            <div className="chips">
+                                {lastRep.numbers.map((x) => (
+                                    <span key={x.label} className="chip">
+                                        {x.label} <b>{x.value}</b>
+                                    </span>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <p className="muted">Your first rep will show up here.</p>
+                    )}
+                </div>
+
+                {children}
+            </aside>
         </div>
     )
 }
