@@ -5,6 +5,7 @@ import Summary, { type SaveState } from './Summary'
 import Auth from './Auth'
 import History from './History'
 import { api, type SavedSession, type SessionSummary, type User } from './api'
+import Logo from './Logo'
 
 type Screen = 'start' | 'session' | 'summary' | 'auth' | 'history' | 'saved'
 
@@ -71,7 +72,7 @@ function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand" onClick={() => setScreen('start')}>
-          <span className="brand-mark">◆</span> FormCheck
+          <Logo size={34} /> FormCheck
         </button>
         {screen === 'session' ? (
           <div className="topbar-right">
@@ -176,14 +177,28 @@ function App() {
           <section className="hero">
             <p className="eyebrow">Rep-by-rep form feedback</p>
             <h1>
-              Your camera,
+              Your camera.
               <br />
-              your coach.
+              <em>Your coach.</em>
             </h1>
             <p className="lead">
               FormCheck watches you train, counts your reps and tells you what to fix after every one. The video is
               analysed in your browser and never leaves your device.
             </p>
+            <div className="hero-stats">
+              <div>
+                <b>33</b>
+                <span>body points tracked</span>
+              </div>
+              <div>
+                <b>Every rep</b>
+                <span>judged and explained</span>
+              </div>
+              <div>
+                <b>On-device</b>
+                <span>video never leaves it</span>
+              </div>
+            </div>
             {!user && (
               <p className="hero-note muted">
                 <button className="link" onClick={() => setScreen('auth')}>

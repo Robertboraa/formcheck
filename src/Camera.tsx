@@ -48,7 +48,7 @@ function bonesFor(part: Part, j: Joints): [number, number][] {
     }
 }
 
-const GOOD = '#4ade80'
+const GOOD = '#19e3c9'
 const BAD = '#f97316'
 
 type Props = {

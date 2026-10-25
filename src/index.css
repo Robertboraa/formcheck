@@ -1,16 +1,18 @@
 /* ---------- design tokens ---------- */
 :root {
-    --bg: #0b0f14;
-    --surface: #131a22;
-    --surface-2: #1a232e;
-    --line: #243040;
-    --text: #e8eef5;
-    --muted: #8a99ab;
-    --good: #4ade80;
+    --bg: #0e1013;
+    --surface: #16191e;
+    --surface-2: #1d2127;
+    --line: #2a3038;
+    --text: #eef1f4;
+    --muted: #8c96a4;
+    --good: #19e3c9; /* electric teal: brand colour and good reps */
+    --good-rgb: 25, 227, 201;
+    --on-good: #03201c;
     --bad: #f97316;
-    --radius: 16px;
+    --radius: 14px;
     --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --display: 'Space Grotesk', var(--font);
+    --display: 'Barlow Semi Condensed', var(--font);
     color-scheme: dark;
 }
 
@@ -21,7 +23,10 @@
 html,
 body {
     margin: 0;
-    background: var(--bg);
+    background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(var(--good-rgb), 0.07), transparent 60%),
+        var(--bg);
+    background-attachment: fixed;
     color: var(--text);
     font-family: var(--font);
     font-size: 15px;
@@ -33,7 +38,8 @@ h1,
 h2,
 h3 {
     font-family: var(--display);
-    letter-spacing: -0.02em;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     margin: 0;
 }
 
@@ -66,7 +72,7 @@ button {
     display: block;
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--muted);
     margin-bottom: 10px;
@@ -100,14 +106,58 @@ button {
     background: none;
     border: 0;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     font-family: var(--display);
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
     padding: 0;
 }
 
 .brand-mark {
     color: var(--good);
+}
+
+/* numbers line up like a sports watch */
+.counter-number,
+.live-value,
+.stat-number,
+.ring-inner b,
+.bar-value,
+.chip b {
+    font-variant-numeric: tabular-nums;
+}
+
+.hero-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+}
+
+.hero-stats div {
+    display: flex;
+    flex-direction: column;
+}
+
+.hero-stats b {
+    font-family: var(--display);
+    font-size: 34px;
+    line-height: 1;
+    color: var(--good);
+}
+
+.hero-stats span {
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
 }
 
 .topbar-right {
@@ -117,7 +167,7 @@ button {
 }
 
 .card {
-    background: var(--surface);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 40%), var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 20px;
@@ -142,6 +192,7 @@ button {
     background: var(--surface-2);
     cursor: pointer;
     font-weight: 600;
+    white-space: nowrap;
     transition: transform 0.1s, background 0.2s, border-color 0.2s;
 }
 
@@ -156,7 +207,7 @@ button {
 .btn.primary {
     background: var(--good);
     border-color: var(--good);
-    color: #06210f;
+    color: var(--on-good);
 }
 
 .btn.primary:hover {
@@ -184,9 +235,16 @@ button {
 }
 
 .hero h1 {
-    font-size: clamp(44px, 6vw, 76px);
-    line-height: 1;
-    margin-bottom: 20px;
+    font-size: clamp(52px, 7vw, 96px);
+    line-height: 0.95;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    margin-bottom: 24px;
+}
+
+.hero h1 em {
+    font-style: normal;
+    color: var(--good);
 }
 
 .lead {
@@ -226,7 +284,7 @@ button {
 
 .exercise-option.selected {
     border-color: var(--good);
-    background: rgba(74, 222, 128, 0.1);
+    background: rgba(var(--good-rgb), 0.1);
     color: var(--good);
 }
 
@@ -315,7 +373,7 @@ button {
 
 .banner.good {
     background: var(--good);
-    color: #06210f;
+    color: var(--on-good);
 }
 
 .banner.bad {
@@ -356,7 +414,7 @@ button {
 
 .status-pill.ready .dot {
     background: var(--good);
-    box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.25);
+    box-shadow: 0 0 0 4px rgba(var(--good-rgb), 0.25);
 }
 
 .status-pill.paused .dot,
@@ -458,7 +516,7 @@ button {
 }
 
 .badge.good {
-    background: rgba(74, 222, 128, 0.15);
+    background: rgba(var(--good-rgb), 0.15);
     color: var(--good);
 }
 
@@ -709,7 +767,7 @@ button {
 
 .field input:focus {
     border-color: var(--good);
-    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
+    box-shadow: 0 0 0 3px rgba(var(--good-rgb), 0.2);
 }
 
 .form-error {
@@ -863,5 +921,18 @@ button {
 
     .user-email {
         display: none;
+    }
+
+    .brand {
+        font-size: 18px;
+        letter-spacing: 0.08em;
+    }
+
+    .topbar-right {
+        gap: 6px;
+    }
+
+    .topbar .btn {
+        padding: 8px 12px;
     }
 }
