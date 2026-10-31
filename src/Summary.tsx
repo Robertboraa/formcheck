@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { shortCue, type Exercise, type Rep } from './exercises'
+import { kindOf, shortCue, verdictOf, type Exercise, type Rep } from './exercises'
+import { Barbell, Plate } from './Plate'
 import { formatDate, scoreOf, type SessionSummary } from './api'
 import { Change } from './History'
 
@@ -32,6 +33,7 @@ function Summary({
 }: Props) {
     const [copied, setCopied] = useState(false)
     const good = reps.filter((r) => r.good).length
+    const perfectCount = reps.filter((r) => verdictOf(r) === 'Perfect rep').length
     const score = reps.length ? Math.round((good / reps.length) * 100) : 0
 
     // most common fault across the session
@@ -78,9 +80,8 @@ function Summary({
         <main className="summary">
             <section className="summary-head">
                 <div>
-                    <p className="eyebrow">{savedAt ? formatDate(savedAt) : 'Session summary'}</p>
                     <h2>{exercise.name}</h2>
-                    <p className="muted">{clipName}</p>
+                    <p className="muted">{savedAt ? `${formatDate(savedAt)}, ${clipName}` : clipName}</p>
                 </div>
                 <div className="actions">
                     {onBack && (
@@ -141,22 +142,24 @@ function Summary({
                 </section>
             )}
 
-            <section className="stats">
-                <div className="card score">
-                    <div
-                        className="ring"
-                        style={{ background: `conic-gradient(var(--good) ${score * 3.6}deg, var(--line) 0deg)` }}
-                    >
-                        <div className="ring-inner">
-                            <b>{score}%</b>
-                            <span>form score</span>
-                        </div>
-                    </div>
+            <section className="card set-card">
+                <div className="set-score">
+                    <b>{score}%</b>
+                    <span>of reps had good form</span>
                 </div>
+                <Barbell reps={reps.map((r) => ({ n: r.n, kind: kindOf(r) }))} />
+                <div className="legend">
+                    <i className="perfect" /> perfect <i className="good" /> good <i className="bad" /> needs work
+                </div>
+            </section>
+
+            <section className="stats">
                 <div className="card stat">
                     <span className="label">Reps</span>
                     <b className="stat-number">{reps.length}</b>
-                    <span className="muted">{good} with good form</span>
+                    <span className="muted">
+                        {good} with good form{perfectCount > 0 && `, ${perfectCount} perfect`}
+                    </span>
                 </div>
                 <div className="card stat">
                     <span className="label">Most common fault</span>
@@ -175,7 +178,7 @@ function Summary({
                     <span className="label">Best rep</span>
                     <b className="stat-number">#{best.n}</b>
                     <span className="muted">
-                        {best.good ? 'Good form' : shortCue(best.faults[0])}, {best.bottom.toFixed(0)}° at the bottom
+                        {best.good ? verdictOf(best) : shortCue(best.faults[0])}
                     </span>
                 </div>
                 {worst && (
@@ -183,7 +186,7 @@ function Summary({
                         <span className="label">Worst rep</span>
                         <b className="stat-number">#{worst.n}</b>
                         <span className="muted">
-                            {worst.good ? 'Good form' : worst.faults.map(shortCue).join(', ')}
+                            {verdictOf(worst)}
                         </span>
                     </div>
                 )}
@@ -192,9 +195,6 @@ function Summary({
             <section className="card">
                 <div className="card-row">
                     <span className="label">Depth per rep</span>
-                    <span className="legend">
-                        <i className="good" /> good <i className="bad" /> needs work
-                    </span>
                 </div>
                 <p className="muted small">
                     Lowest {exercise.mainLabel.toLowerCase()} angle in each rep. Taller bar = deeper.
@@ -204,7 +204,7 @@ function Summary({
                         <div key={r.n} className="bar-col" title={r.line}>
                             <span className="bar-value">{r.bottom.toFixed(0)}°</span>
                             <div
-                                className={`bar ${r.good ? 'good' : 'bad'}`}
+                                className={`bar ${kindOf(r)}`}
                                 style={{ height: `${Math.max(4, ((180 - r.bottom) / deepest) * 100)}%` }}
                             />
                             <span className="bar-label">{r.n}</span>
@@ -218,10 +218,10 @@ function Summary({
                 <ol className="rep-table">
                     {reps.map((r) => (
                         <li key={r.n}>
-                            <span className={`badge ${r.good ? 'good' : 'bad'}`}>{r.n}</span>
+                            <Plate label={r.n} kind={kindOf(r)} size={36} />
                             <div>
-                                <p className={r.good ? 'good-text' : 'bad-text'}>
-                                    {r.good ? 'Good rep' : r.faults.join('. ')}
+                                <p className={`${kindOf(r)}-text`}>
+                                    {verdictOf(r, false)}
                                 </p>
                                 <div className="chips">
                                     {r.numbers.map((x) => (

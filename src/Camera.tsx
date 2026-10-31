@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
-import { LEFT, RIGHT, shortCue, type Exercise, type Frame, type Joints, type Part, type Rep } from './exercises'
+import { LEFT, RIGHT, kindOf, shortCue, verdictOf, type Exercise, type Frame, type Joints, type Part, type Rep } from './exercises'
 
 // pick a British English voice once the browser has loaded its voice list
 let britishVoice: SpeechSynthesisVoice | undefined
@@ -48,8 +48,10 @@ function bonesFor(part: Part, j: Joints): [number, number][] {
     }
 }
 
-const GOOD = '#19e3c9'
-const BAD = '#f97316'
+// overlay colours, brighter versions of the plate colours so they read on video
+const GOOD = '#5b93ff'
+const PERFECT = '#f5c518'
+const BAD = '#ff5747'
 
 type Props = {
     file: File | null
@@ -66,7 +68,7 @@ function Camera({ file, exercise, onRep, children }: Props) {
     const [reps, setReps] = useState(0)
     const [status, setStatus] = useState<'loading' | 'waiting' | 'ready' | 'paused'>('loading')
     const [lastRep, setLastRep] = useState<Rep | null>(null)
-    const [flash, setFlash] = useState<'good' | 'bad' | null>(null)
+    const [flash, setFlash] = useState<'perfect' | 'good' | 'bad' | null>(null)
     const [banner, setBanner] = useState('')
 
     useEffect(() => {
@@ -217,9 +219,10 @@ function Camera({ file, exercise, onRep, children }: Props) {
                         const moved = Math.abs(px(j.hip).x - startX) > startTorso
                         const resized = Math.abs(torso - startTorso) > startTorso * 0.25
                         // body far above the start height = climbed on (e.g. jumped onto the dip bars)
-                        const climbed = startShoulderY - shoulderY > startTorso * 0.25
+                        const climbed = exercise.onEquipment && startShoulderY - shoulderY > startTorso * 0.25
                         // body far below the start height with arms/legs straight = stepped off
-                        const steppedOff = shoulderY - startShoulderY > startTorso * 0.3 && main > exercise.topAbove
+                        const steppedOff =
+                            exercise.onEquipment && shoulderY - startShoulderY > startTorso * 0.3 && main > exercise.topAbove
 
                         if (stage !== 'waiting' && (moved || resized || climbed || steppedOff)) {
                             stage = 'waiting'
@@ -274,7 +277,8 @@ function Camera({ file, exercise, onRep, children }: Props) {
                                 return { label: m.label, value: `${v === undefined ? '–' : v.toFixed(0)}${m.unit}` }
                             })
                             numbers.push({ label: 'top', value: `${top.toFixed(0)}°` })
-                            const verdict = good ? 'Good rep' : faults.map((f) => f.text).join(' and ')
+                            const perfect = good && (exercise.perfect?.(worst) ?? false)
+                            const verdict = perfect ? 'Perfect rep' : good ? 'Good rep' : faults.map((f) => f.text).join(' and ')
                             const rep: Rep = {
                                 n: repCount,
                                 good,
@@ -286,18 +290,18 @@ function Camera({ file, exercise, onRep, children }: Props) {
                             }
                             setLastRep(rep)
                             onRep(rep)
-                            const cue = good ? 'good' : shortCue(faults[0].text)
+                            const cue = perfect ? 'perfect' : good ? 'good' : shortCue(faults[0].text)
                             say(`${repCount}, ${cue}`)
 
                             // flash the video edge, show the cue big, and colour the body part at fault
-                            setFlash(good ? 'good' : 'bad')
-                            setBanner(good ? 'Good rep' : cue)
+                            setFlash(perfect ? 'perfect' : good ? 'good' : 'bad')
+                            setBanner(good ? verdict : cue)
                             clearTimeout(flashTimer)
                             flashTimer = setTimeout(() => setFlash(null), 1500)
                             highlight = good
                                 ? bonesFor('hips', j).concat(bonesFor('arms', j))
                                 : faults.flatMap((f) => f.parts.flatMap((part) => bonesFor(part, j)))
-                            highlightColour = good ? GOOD : BAD
+                            highlightColour = perfect ? PERFECT : good ? GOOD : BAD
                             highlightUntil = performance.now() + 1500
                             worst = {}
                             top = main
@@ -309,7 +313,7 @@ function Camera({ file, exercise, onRep, children }: Props) {
 
                         chartCtx.clearRect(0, 0, chart.width, chart.height)
                         // faint guide lines every 45°
-                        chartCtx.strokeStyle = 'rgba(255,255,255,0.08)'
+                        chartCtx.strokeStyle = 'rgba(23,32,46,0.12)'
                         chartCtx.lineWidth = 1
                         for (const deg of [45, 90, 135]) {
                             const y = chart.height - (deg / 180) * chart.height
@@ -318,7 +322,7 @@ function Camera({ file, exercise, onRep, children }: Props) {
                             chartCtx.lineTo(chart.width, y)
                             chartCtx.stroke()
                         }
-                        chartCtx.strokeStyle = GOOD
+                        chartCtx.strokeStyle = '#1e4fa8'
                         chartCtx.lineWidth = 3
                         chartCtx.lineJoin = 'round'
                         chartCtx.beginPath()
@@ -354,7 +358,7 @@ function Camera({ file, exercise, onRep, children }: Props) {
                         }
 
                         // skeleton: joints
-                        ctx.fillStyle = GOOD
+                        ctx.fillStyle = '#ffffff'
                         for (let i = 0; i < landmarks.length; i++) {
                             ctx.beginPath()
                             ctx.arc(px(i).x, px(i).y, 5, 0, Math.PI * 2)
@@ -415,8 +419,8 @@ function Camera({ file, exercise, onRep, children }: Props) {
                     <span className="label">Last rep</span>
                     {lastRep ? (
                         <>
-                            <p className={`verdict ${lastRep.good ? 'good' : 'bad'}`}>
-                                {lastRep.good ? 'Good rep' : lastRep.faults.map(shortCue).join(' · ')}
+                            <p className={`verdict ${kindOf(lastRep)}`}>
+                                {verdictOf(lastRep)}
                             </p>
                             <div className="chips">
                                 {lastRep.numbers.map((x) => (

@@ -30,7 +30,6 @@ function Auth({ onSignedIn, onCancel }: Props) {
     return (
         <main className="auth">
             <form className="card auth-card" onSubmit={submit}>
-                <p className="eyebrow">{mode === 'login' ? 'Welcome back' : 'Create an account'}</p>
                 <h2>{mode === 'login' ? 'Sign in' : 'Start tracking your progress'}</h2>
                 <p className="muted">
                     Your sessions are saved so you can compare them over time. Only the rep numbers are stored, never

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import Camera from './Camera'
-import { EXERCISES, findExercise, shortCue, type Rep } from './exercises'
+import { EXERCISES, findExercise, kindOf, verdictOf, type Rep } from './exercises'
 import Summary, { type SaveState } from './Summary'
 import Auth from './Auth'
 import History from './History'
 import { api, type SavedSession, type SessionSummary, type User } from './api'
 import Logo from './Logo'
+import Gauge from './Gauge'
+import { Plate } from './Plate'
 
 type Screen = 'start' | 'session' | 'summary' | 'auth' | 'history' | 'saved'
 
@@ -115,8 +117,8 @@ function App() {
                 <ol className="rep-list">
                   {[...reps].reverse().map((rep) => (
                     <li key={rep.n}>
-                      <span className={`badge ${rep.good ? 'good' : 'bad'}`}>{rep.n}</span>
-                      <span>{rep.good ? 'Good rep' : rep.faults.map(shortCue).join(' · ')}</span>
+                      <Plate label={rep.n} kind={kindOf(rep)} size={30} />
+                      <span>{verdictOf(rep)}</span>
                     </li>
                   ))}
                 </ol>
@@ -175,30 +177,12 @@ function App() {
       {screen === 'start' && (
         <main className="start">
           <section className="hero">
-            <p className="eyebrow">Rep-by-rep form feedback</p>
-            <h1>
-              Your camera.
-              <br />
-              <em>Your coach.</em>
-            </h1>
+            <h1>Film your set. See what to fix on every rep.</h1>
             <p className="lead">
-              FormCheck watches you train, counts your reps and tells you what to fix after every one. The video is
-              analysed in your browser and never leaves your device.
+              FormCheck measures your joints through the camera, counts your reps and says out loud what to fix. The
+              video is analysed on this device and never uploaded.
             </p>
-            <div className="hero-stats">
-              <div>
-                <b>33</b>
-                <span>body points tracked</span>
-              </div>
-              <div>
-                <b>Every rep</b>
-                <span>judged and explained</span>
-              </div>
-              <div>
-                <b>On-device</b>
-                <span>video never leaves it</span>
-              </div>
-            </div>
+            <Gauge />
             {!user && (
               <p className="hero-note muted">
                 <button className="link" onClick={() => setScreen('auth')}>

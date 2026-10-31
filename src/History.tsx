@@ -32,7 +32,6 @@ function History({ initialExercise, onOpen, onStart }: Props) {
         <main className="history">
             <section className="summary-head">
                 <div>
-                    <p className="eyebrow">Your progress</p>
                     <h2>History</h2>
                 </div>
                 <div className="tabs">
@@ -114,8 +113,8 @@ function History({ initialExercise, onOpen, onStart }: Props) {
                             {sessions.map((s, i) => (
                                 <li key={s.id}>
                                     <button onClick={() => onOpen(s, sessions[i + 1])}>
-                                        <span className={`badge ${scoreOf(s) >= 70 ? 'good' : 'bad'}`}>
-                                            {scoreOf(s)}
+                                        <span className={`score-tag ${scoreOf(s) >= 70 ? 'good' : 'bad'}`}>
+                                            {scoreOf(s)}%
                                         </span>
                                         <span className="session-main">
                                             <b>{formatDate(s.createdAt)}</b>

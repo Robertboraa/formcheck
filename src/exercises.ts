@@ -61,6 +61,18 @@ export function shortCue(text: string) {
     return text.split(/[.,]/)[0]
 }
 
+// perfect, good or bad: decides the colour of a rep everywhere in the app
+export function kindOf(rep: Rep): 'perfect' | 'good' | 'bad' {
+    if (!rep.good) return 'bad'
+    return rep.line.startsWith('Perfect') ? 'perfect' : 'good'
+}
+
+// what to call a rep: "Perfect rep", "Good rep", or its faults
+export function verdictOf(rep: Rep, short = true) {
+    if (!rep.good) return rep.faults.map((f) => (short ? shortCue(f) : f)).join(short ? ', ' : '. ')
+    return rep.line.startsWith('Perfect') ? 'Perfect rep' : 'Good rep'
+}
+
 function fault(text: string, ...parts: Part[]): Fault {
     return { text, parts }
 }
@@ -85,8 +97,11 @@ export type Exercise = {
     mainNeeds: (keyof Joints)[]
     topAbove: number // main angle must be above this to be ready to start
     range: number // a rep = the main angle moving down then back up by at least this much
+    onEquipment?: boolean // done on equipment (dip bars): pause when climbing on or stepping off
     measures: Measure[]
     judge: (w: Record<string, number | undefined>) => Fault[]
+    // a rep with no faults is "Good"; if this also returns true it is "Perfect"
+    perfect?: (w: Record<string, number | undefined>) => boolean
 }
 
 // ---------- squat ----------
@@ -219,6 +234,7 @@ const dips: Exercise = {
     mainNeeds: ['shoulder', 'elbow', 'wrist'],
     topAbove: 150,
     range: 15,
+    onEquipment: true,
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
@@ -306,6 +322,16 @@ const pushup: Exercise = {
     measures: [
         { key: 'depth', label: 'depth', unit: '°', worst: 'min', get: elbowAngle },
         {
+            // how high the shoulder is above the hand, as % of arm length: 100 = arms straight down, small = chest near the floor
+            key: 'chest',
+            label: 'chest height',
+            unit: '%',
+            worst: 'min',
+            needs: ['shoulder', 'elbow', 'wrist'],
+            get: ({ p, j }) =>
+                ((p(j.wrist).y - p(j.shoulder).y) / (dist(p(j.shoulder), p(j.elbow)) + dist(p(j.elbow), p(j.wrist)))) * 100,
+        },
+        {
             key: 'sag',
             label: 'sag',
             unit: '%',
@@ -338,17 +364,19 @@ const pushup: Exercise = {
             get: ({ p, j }) => angle(p(j.ear), p(j.shoulder), p(j.hip)),
         },
     ],
-    // placeholders until the numbers from real clips are in
-        // thresholds set from recorded clips: good, shallow, sagging, piked, no lockout, head down
+    // thresholds set from recorded clips: good, shallow, sagging, piked, no lockout, head down
     judge: (w) => {
         const problems: Fault[] = []
         if ((w.sag ?? 0) > 7.5) problems.push(fault('Squeeze your glutes, your hips are sagging', 'hips'))
         if ((w.pike ?? 0) < -7) problems.push(fault('Lower your hips, keep your body in a straight line', 'hips'))
-        if ((w.depth ?? 0) > 62) problems.push(fault('Go lower, chest closer to the floor', 'arms'))
+        // depth: good reps read 29–33% chest height, shallow ones 46–54% (camera side-on, level with the body)
+        if ((w.chest ?? 0) > 45) problems.push(fault('Go lower, chest closer to the floor', 'arms'))
         if ((w.top ?? 180) < 150) problems.push(fault('Go higher at the top', 'arms'))
         if ((w.neck ?? 180) < 135) problems.push(fault('Keep your head in line, look at the floor just ahead of your hands', 'head'))
         return problems
     },
+    // slightly shallow reps still count as good; only properly deep ones are perfect
+    perfect: (w) => (w.chest ?? 100) <= 35,
 }
 
 // dips are left out of the picker for now: the bars hide the arms too often
