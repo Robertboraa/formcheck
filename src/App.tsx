@@ -8,8 +8,19 @@ import { api, type SavedSession, type SessionSummary, type User } from './api'
 import Logo from './Logo'
 import Gauge from './Gauge'
 import { Plate } from './Plate'
+import Research from './Research'
+import { DEFAULT_MODEL, POSE_MODELS, modelInfo } from './pose'
 
-type Screen = 'start' | 'session' | 'summary' | 'auth' | 'history' | 'saved'
+type Screen = 'start' | 'session' | 'summary' | 'auth' | 'history' | 'saved' | 'research'
+
+function savedModel() {
+  try {
+    const id = localStorage.getItem('formcheck-model')
+    return POSE_MODELS.some((m) => m.id === id) ? id! : DEFAULT_MODEL
+  } catch {
+    return DEFAULT_MODEL
+  }
+}
 
 function App() {
   const [screen, setScreen] = useState<Screen>('start')
@@ -20,6 +31,16 @@ function App() {
   const [saveState, setSaveState] = useState<SaveState>('guest')
   const [previous, setPrevious] = useState<SessionSummary | undefined>()
   const [saved, setSaved] = useState<SavedSession | null>(null)
+  const [modelId, setModelId] = useState(savedModel)
+
+  function pickModel(id: string) {
+    setModelId(id)
+    try {
+      localStorage.setItem('formcheck-model', id)
+    } catch {
+      // not saved between visits, still used now
+    }
+  }
 
   const exercise = EXERCISES.find((x) => x.id === exerciseId) ?? EXERCISES[0]
   const clipName = file?.name ?? 'Live camera'
@@ -78,13 +99,18 @@ function App() {
         </button>
         {screen === 'session' ? (
           <div className="topbar-right">
-            <span className="muted">{exercise.name}</span>
+            <span className="muted">
+              {exercise.name} · {modelInfo(modelId).name}
+            </span>
             <button className="btn primary" onClick={finish}>
               Finish
             </button>
           </div>
         ) : (
           <div className="topbar-right">
+            <button className={`btn ghost ${screen === 'research' ? 'active' : ''}`} onClick={() => setScreen('research')}>
+              Research
+            </button>
             {user ? (
               <>
                 <button className="btn ghost" onClick={() => setScreen('history')}>
@@ -108,7 +134,7 @@ function App() {
 
       {screen === 'session' && (
         <main className="session">
-          <Camera file={file} exercise={exercise} onRep={addRep}>
+          <Camera file={file} exercise={exercise} onRep={addRep} modelId={modelId}>
             <div className="card">
               <span className="label">All reps</span>
               {reps.length === 0 ? (
@@ -139,6 +165,8 @@ function App() {
           previous={previous}
         />
       )}
+
+      {screen === 'research' && <Research />}
 
       {screen === 'auth' && (
         <Auth
@@ -207,7 +235,20 @@ function App() {
               ))}
             </div>
 
-            <span className="label">2. Start</span>
+            <span className="label">2. Pose model</span>
+            <div className="segmented model-picker">
+              {POSE_MODELS.filter((m) => m.id === 'mediapipe-full' || m.id === 'yolo11n').map((m) => (
+                <button key={m.id} className={m.id === modelId ? 'selected' : ''} onClick={() => pickModel(m.id)}>
+                  {m.family === 'yolo' ? 'YOLO' : 'MediaPipe'}
+                </button>
+              ))}
+            </div>
+            <p className="muted small model-note">
+              {modelInfo(modelId).name}: {modelInfo(modelId).note}.
+              {modelInfo(modelId).family === 'yolo' && ' The weight-on-toes check needs the feet, so it is off.'}
+            </p>
+
+            <span className="label">3. Start</span>
             <div className="actions">
               <button className="btn primary big" onClick={() => begin(null)}>
                 Start camera

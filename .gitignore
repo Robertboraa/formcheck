@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 public/wasm
+public/ort
+
+# evaluation: videos stay out of git
+evaluation/data/*.mp4
+evaluation/data/*.mov

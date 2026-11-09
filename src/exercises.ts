@@ -53,8 +53,12 @@ export type Measure = {
 // body parts a fault can point at, so the skeleton can show where the problem is
 export type Part = 'back' | 'hips' | 'legs' | 'arms' | 'head' | 'feet'
 
-// one problem found in a rep: the cue to show and say, and the body parts to colour
-export type Fault = { text: string; parts: Part[] }
+// one problem found in a rep: a short code for the evaluation (e.g. 'shallow'),
+// the cue to show and say, and the body parts to colour
+export type Fault = { code: FaultCode; text: string; parts: Part[] }
+
+// fault codes used in the evaluation labels (evaluation/labels_template.csv)
+export type FaultCode = 'shallow' | 'lean' | 'head' | 'toes' | 'sag' | 'pike' | 'lockout' | 'legs'
 
 // the short version of a cue: everything before the first comma or full stop
 export function shortCue(text: string) {
@@ -73,8 +77,8 @@ export function verdictOf(rep: Rep, short = true) {
     return rep.line.startsWith('Perfect') ? 'Perfect rep' : 'Good rep'
 }
 
-function fault(text: string, ...parts: Part[]): Fault {
-    return { text, parts }
+function fault(code: FaultCode, text: string, ...parts: Part[]): Fault {
+    return { code, text, parts }
 }
 
 // everything the app records about one finished rep
@@ -202,20 +206,20 @@ const squat: Exercise = {
         const leaning = lean > 40
 
         // depth
-        if (thigh < -35) problems.push(fault('Go much lower, aim for thighs parallel to the floor. A slightly wider stance with toes turned out can help', 'legs'))
-        else if (thigh < -22) problems.push(fault('Almost there, go a little lower', 'legs'))
+        if (thigh < -35) problems.push(fault('shallow', 'Go much lower, aim for thighs parallel to the floor. A slightly wider stance with toes turned out can help', 'legs'))
+        else if (thigh < -22) problems.push(fault('shallow', 'Almost there, go a little lower', 'legs'))
 
         // forward lean
-        if (lean > 50) problems.push(fault('Too much forward lean, push your chest up and keep your back straight', 'back'))
-        else if (leaning) problems.push(fault('Lift your chest a little', 'back'))
+        if (lean > 50) problems.push(fault('lean', 'Too much forward lean, push your chest up and keep your back straight', 'back'))
+        else if (leaning) problems.push(fault('lean', 'Lift your chest a little', 'back'))
 
         // looking down
-        if (head < -50) problems.push(fault('Look up, your eyes are on the floor', 'head'))
-        else if (head < -38) problems.push(fault('Lift your chin, look a few metres ahead', 'head'))
+        if (head < -50) problems.push(fault('head', 'Look up, your eyes are on the floor', 'head'))
+        else if (head < -38) problems.push(fault('head', 'Lift your chin, look a few metres ahead', 'head'))
 
         // weight on toes (only when not leaning)
-        if (!leaning && balance > 70) problems.push(fault('Your weight is far onto your toes, sit back into your heels', 'feet'))
-        else if (!leaning && balance > 50) problems.push(fault('Shift your weight back towards the middle of your foot', 'feet'))
+        if (!leaning && balance > 70) problems.push(fault('toes', 'Your weight is far onto your toes, sit back into your heels', 'feet'))
+        else if (!leaning && balance > 50) problems.push(fault('toes', 'Shift your weight back towards the middle of your foot', 'feet'))
 
         return problems
     },
@@ -290,9 +294,9 @@ const dips: Exercise = {
     // placeholders until the numbers from real clips are in
     judge: (w) => {
         const problems: Fault[] = []
-        if ((w.depth ?? 0) > 100) problems.push(fault('Go lower, upper arms to parallel', 'arms'))
-        if ((w.depth ?? 180) < 60) problems.push(fault("Don't sink so deep", 'arms'))
-        if ((w.legs ?? 0) > 25) problems.push(fault("Keep your legs still, don't kick", 'legs'))
+        if ((w.depth ?? 0) > 100) problems.push(fault('shallow', 'Go lower, upper arms to parallel', 'arms'))
+        if ((w.depth ?? 180) < 60) problems.push(fault('shallow', "Don't sink so deep", 'arms'))
+        if ((w.legs ?? 0) > 25) problems.push(fault('legs', "Keep your legs still, don't kick", 'legs'))
         return problems
     },
 }
@@ -367,12 +371,12 @@ const pushup: Exercise = {
     // thresholds set from recorded clips: good, shallow, sagging, piked, no lockout, head down
     judge: (w) => {
         const problems: Fault[] = []
-        if ((w.sag ?? 0) > 7.5) problems.push(fault('Squeeze your glutes, your hips are sagging', 'hips'))
-        if ((w.pike ?? 0) < -7) problems.push(fault('Lower your hips, keep your body in a straight line', 'hips'))
+        if ((w.sag ?? 0) > 7.5) problems.push(fault('sag', 'Squeeze your glutes, your hips are sagging', 'hips'))
+        if ((w.pike ?? 0) < -7) problems.push(fault('pike', 'Lower your hips, keep your body in a straight line', 'hips'))
         // depth: good reps read 29–33% chest height, shallow ones 46–54% (camera side-on, level with the body)
-        if ((w.chest ?? 0) > 45) problems.push(fault('Go lower, chest closer to the floor', 'arms'))
-        if ((w.top ?? 180) < 150) problems.push(fault('Go higher at the top', 'arms'))
-        if ((w.neck ?? 180) < 135) problems.push(fault('Keep your head in line, look at the floor just ahead of your hands', 'head'))
+        if ((w.chest ?? 0) > 45) problems.push(fault('shallow', 'Go lower, chest closer to the floor', 'arms'))
+        if ((w.top ?? 180) < 150) problems.push(fault('lockout', 'Go higher at the top', 'arms'))
+        if ((w.neck ?? 180) < 135) problems.push(fault('head', 'Keep your head in line, look at the floor just ahead of your hands', 'head'))
         return problems
     },
     // slightly shallow reps still count as good; only properly deep ones are perfect

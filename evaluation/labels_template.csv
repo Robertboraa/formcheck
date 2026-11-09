@@ -1,0 +1,6 @@
+video,participant,session,exercise,condition,rep,start_s,end_s,correct,faults,notes
+P01_S1_squat_good_side.mp4,P01,S1,squat,side,1,1.40,3.55,1,,
+P01_S1_squat_good_side.mp4,P01,S1,squat,side,2,3.55,5.70,1,,
+P01_S1_squat_shallow_side.mp4,P01,S1,squat,side,1,1.20,2.90,0,shallow,
+P01_S1_pushup_sag_side.mp4,P01,S1,pushup,side,1,0.90,2.60,0,sag,
+P01_S1_pushup_sag_side.mp4,P01,S1,pushup,side,2,2.60,4.30,0,sag;head,hips sagged and looked up
