@@ -728,6 +728,78 @@ def figures(r, faults, frames, ae, robust):
         bars(robust, "condition", "F1", "robustness", "F1", "Figure 4. Fault-detection F1 per camera condition", (0, 1))
 
 
+
+
+def overall_summary(r):
+    """One table at the top: every headline number side by side, the better model, and whether the gap is significant."""
+    t = os.path.join(r.out, "tables")
+
+    def load(slug):
+        path = os.path.join(t, f"{slug}.csv")
+        return pd.read_csv(path) if os.path.exists(path) else None
+
+    # metric, table, row filter, column, True if higher is better, significance table + filter + p column
+    specs = [
+        ("Joint-angle error, all angles (°)", "angle_mae", lambda d: d[d["angle"] == "all"], "MAE", False, ("angle_tests", lambda d: d[d["angle"] == "all"], "Wilcoxon p")),
+        ("Knee-angle error (°)", "angle_mae", lambda d: d[d["angle"] == "knee"], "MAE", False, ("angle_tests", lambda d: d[d["angle"] == "knee"], "Wilcoxon p")),
+        ("Elbow-angle error (°)", "angle_mae", lambda d: d[d["angle"] == "elbow"], "MAE", False, ("angle_tests", lambda d: d[d["angle"] == "elbow"], "Wilcoxon p")),
+        ("Joints within 0.2 torso of hand mark (PCK@0.2)", "pck", None, "PCK@0.2", True, None),
+        ("Faulty-rep detection F1", "classification", lambda d: d[d["exercise"] == "all"], "F1", True, ("mcnemar", None, "McNemar p")),
+        ("Macro F1 over faults", "macro_f1", None, "macro F1", True, None),
+        ("Real reps found (rep recall)", "counting", None, "rep recall", True, None),
+        ("Rep count error per set", "counting", None, "count MAE / set", False, None),
+        ("Rep start error (ms)", "counting", None, "start error ms", False, None),
+        ("Angle jitter (°)", "jitter", None, "jitter ° (mean)", False, None),
+        ("Person found (% of frames)", "detection", None, "person found %", True, None),
+        ("Time per frame (ms)", "speed", None, "mean ms", False, ("speed_tests", None, "Wilcoxon p")),
+    ]
+    rows = []
+    models = None
+    for label, slug, filt, col, higher, sig in specs:
+        d = load(slug)
+        if d is None or col not in d:
+            continue
+        if filt:
+            d = filt(d)
+        if len(d) == 0:
+            continue
+        values = dict(zip(d["model"], d[col]))
+        models = models or list(values)
+        row = {"metric": label}
+        for m in values:
+            row[m] = values[m]
+        valid = {m: v for m, v in values.items() if pd.notna(v)}
+        if len(valid) >= 2:
+            best = max(valid, key=valid.get) if higher else min(valid, key=valid.get)
+            tied = max(valid.values()) - min(valid.values()) < 1e-9
+            row["better"] = "tie" if tied else best
+        else:
+            row["better"] = "–"
+        row["p"] = np.nan
+        if sig:
+            ds = load(sig[0])
+            if ds is not None and sig[2] in ds:
+                if sig[1]:
+                    ds = sig[1](ds)
+                if len(ds) == 1:
+                    row["p"] = ds[sig[2]].iloc[0]
+        row["significant?"] = "–" if pd.isna(row["p"]) else ("yes" if row["p"] < 0.05 else "no")
+        rows.append(row)
+    if not rows:
+        return
+    df = pd.DataFrame(rows)
+    wins = df["better"].value_counts()
+    parts = [
+        "\n## 0. Overall comparison\n",
+        "Each headline number side by side. *better* = the model with the better value; "
+        "*significant?* = whether a paired test says the gap is real (p < 0.05), where one applies.\n",
+        "**Table 0. MediaPipe vs YOLO-pose at a glance**\n\n" + md_table(df),
+        "Wins: " + ", ".join(f"{m} {n}" for m, n in wins.items() if m not in ("–", "tie")) + "\n",
+    ]
+    df.to_csv(os.path.join(t, "overall.csv"), index=False)
+    r.parts[1:1] = parts
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -786,6 +858,7 @@ def main():
         _, ae = section_keypoints(r, frames, keypoints)
 
     figures(r, faults, frames, ae, robust)
+    overall_summary(r)
     path = r.save()
     print(f"Wrote {path}")
 

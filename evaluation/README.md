@@ -110,6 +110,7 @@ batch run (30). Marks are saved in the browser as you go. Download the CSV when 
 
 | Section | Metrics |
 |---|---|
+| Overall comparison | every headline number side by side, which model is better, and whether the gap is significant |
 | Dataset | reps per exercise, fault and condition |
 | Label agreement | Cohen's kappa between the two raters |
 | Rep counting | count error per set, % of sets counted exactly, rep recall/precision, start/end error (ms), temporal IoU |
