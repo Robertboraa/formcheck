@@ -266,6 +266,7 @@ def match_reps(pred, labels):
                         "exercise": lab["exercise"],
                         "participant": lab.get("participant", ""),
                         "condition": lab.get("condition", ""),
+                        "source": lab.get("source", ""),
                         "label_rep": lab["rep"],
                         "label_start": lab["start_s"],
                         "label_end": lab["end_s"],
@@ -303,6 +304,10 @@ def section_dataset(r, labels, runs):
         for code in codes:
             fault_rows.append({"exercise": ex, "fault": code, "reps": int(sum(code in fault_set(v) for v in lx["faults"]))})
     r.table("dataset_faults", pd.DataFrame(fault_rows), "Table 2. Labelled reps per fault", 0)
+
+    if "source" in labels:
+        src = labels.groupby("source").agg(videos=("video", "nunique"), people=("participant", "nunique"), reps=("rep", "count"), correct=("correct", "sum")).reset_index()
+        r.table("dataset_sources", src, "Table 1b. Labelled reps per data source", 0)
 
     if "participant" in labels and "condition" in labels:
         pc = labels.groupby(["participant", "condition"]).size().reset_index(name="reps")
@@ -461,6 +466,38 @@ def section_robustness(r, matched):
         rows.append({"condition": cond, "model": name(model), "reps": len(g), "rep recall": g["matched"].mean(), "F1": res["F1"], "accuracy": res["accuracy"]})
     df = pd.DataFrame(rows)
     r.table("robustness", df, "Table 11. Results per camera condition")
+    return df
+
+
+def section_sources(r, matched):
+    """Same metrics split by where the clips came from (own, friends, public dataset)."""
+    if "source" not in matched or matched["source"].fillna("").eq("").all() or matched["source"].nunique() < 2:
+        return None
+    r.h("5.1 Results per data source", 3)
+    r.p("Clips from people who were not used to set the thresholds show how well each model generalises.")
+    rows = []
+    for (src, model), g in matched.groupby(["source", "model"]):
+        found = g[g["matched"]]
+        res = binary_metrics(found["label_correct"] == 0, found["pred_correct"] == 0)
+        counts = g.groupby("video").agg(true=("matched", "size"), found=("matched", "sum"))
+        lo, hi = bootstrap_ci(found.assign(y_true=found["label_correct"] == 0, y_pred=found["pred_correct"] == 0), f1_of)
+        rows.append(
+            {
+                "source": src,
+                "model": name(model),
+                "videos": g["video"].nunique(),
+                "people": g["participant"].nunique() if "participant" in g else np.nan,
+                "reps": len(g),
+                "rep recall": g["matched"].mean(),
+                "precision": res["precision"],
+                "recall": res["recall"],
+                "F1": res["F1"],
+                "F1 95% CI": f"{fmt(lo)}–{fmt(hi)}",
+                "accuracy": res["accuracy"],
+            }
+        )
+    df = pd.DataFrame(rows)
+    r.table("sources", df, "Table 11b. Results per data source")
     return df
 
 
@@ -739,6 +776,7 @@ def main():
             m, faults = section_classification(r, matched)
             section_classification_tests(r, m)
             robust = section_robustness(r, matched)
+            section_sources(r, matched)
     else:
         r.p("_No labels.csv found: rep counting and classification need it (copy labels_template.csv)._")
 

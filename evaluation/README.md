@@ -66,7 +66,8 @@ One row per real rep:
 | column | meaning |
 |---|---|
 | video | exact file name |
-| participant, session | P01 / S1 … |
+| source | `own` (your clips), `friends`, or `dataset` (Mendeley) |
+| participant, session | P01 / S1 … (friends P02, P03…; dataset clips D01, D02… with session empty) |
 | exercise | `squat` or `pushup` |
 | condition | `side`, `diagonal`, `dim`, `far` |
 | rep | 1, 2, 3 … |
@@ -85,6 +86,11 @@ shallow, label it shallow.
 
 To get the times, play the clip in QuickTime or VLC and step frame by frame (← →). You can also use
 the frame bar in *Research → Mark joints*, which shows the time of every frame.
+
+**Clips from three sources** all use the same format. Rename the dataset and friends' clips so the
+exercise is in the name (e.g. `D01_squat_side.mp4`, `P03_S1_pushup_good_side.mp4`); the app reads
+the exercise from the name. Leave out any clip that was used to set the thresholds, because a clip
+the rules were tuned on can't also test them. score.py splits the results by source in Table 11b.
 
 **Two raters:** you and your friend each fill in a copy on your own. Save one as `labels.csv` and
 the other as `labels_rater2.csv`. score.py then reports Cohen's kappa. Afterwards, settle any
