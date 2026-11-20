@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { JOINTS, frameTime, loadVideo, seek } from './csv'
-import type { Dataset } from './compare/data'
+import { clipName, type Dataset } from './compare/data'
 import { modelName, type WorstFrame } from './compare/metrics'
 
 // Pictures of the frames where each model was furthest from the hand marks: your marks in green,
@@ -78,7 +78,7 @@ function FrameGallery({ data, worst, models, colours }: Props) {
                         hidden
                         onChange={(e) => {
                             const next = new Map(files)
-                            for (const f of e.target.files ?? []) if (needed.includes(f.name)) next.set(f.name, f)
+                            for (const f of e.target.files ?? []) if (needed.includes(clipName(f.name))) next.set(clipName(f.name), f)
                             setFiles(next)
                             e.target.value = ''
                         }}

@@ -133,11 +133,14 @@ const SIZE = 640 // the model's input size
 const MIN_PERSON_SCORE = 0.25
 
 // ONNX Runtime Web: on the GPU through WebGPU when the browser has it, otherwise on the CPU (wasm)
-async function onnxSession(url: string) {
+// gpu = false forces the CPU, for models WebGPU can't run every step of
+async function onnxSession(url: string, gpu = true) {
     const ort = await import('onnxruntime-web/webgpu')
     ort.env.wasm.wasmPaths = `${location.origin}/ort/`
+    // use several CPU cores when the page is cross-origin isolated (see vite.config.ts)
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4)) : 1
     try {
-        if (!('gpu' in navigator)) throw new Error('no WebGPU')
+        if (!gpu || !('gpu' in navigator)) throw new Error('no WebGPU')
         return { ort, backend: 'webgpu', session: await ort.InferenceSession.create(url, { executionProviders: ['webgpu'] }) }
     } catch {
         return { ort, backend: 'wasm', session: await ort.InferenceSession.create(url, { executionProviders: ['wasm'] }) }
@@ -266,7 +269,11 @@ async function loadRtmo(info: PoseModelInfo): Promise<Loaded> {
     const check = await fetch(url, { method: 'HEAD' })
     if (!check.ok || (check.headers.get('content-type') ?? '').includes('text/html'))
         throw new Error(`${info.name} isn't downloaded yet. In the terminal, in the formcheck folder, run: npm run get-rtmo`)
-    const { ort, backend, session } = await onnxSession(url)
+    // RTMO runs on the CPU: inside the model, one step (a Where node) can produce an empty result when
+    // there are few candidate people, and ONNX Runtime's WebGPU backend can't run an empty step
+    // ("Invalid dispatch group size (0, 1, 1)"). The CPU backend handles it. Every frame uses the same
+    // backend, so the speed numbers stay consistent.
+    const { ort, backend, session } = await onnxSession(url, false)
 
     const canvas = document.createElement('canvas')
     canvas.width = SIZE

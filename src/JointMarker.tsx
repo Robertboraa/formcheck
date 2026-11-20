@@ -124,7 +124,7 @@ function JointMarker({ file, fps, marks: rows, onChange, suggestions = [], defau
         const copy = { ...store }
         if (Object.keys(newMarks).length === 0) delete copy[frame]
         else copy[frame] = { side: newSide, marks: newMarks }
-        onChange(toRows(file.name, copy))
+        onChange(toRows(file.name.trim(), copy))
         // frame finished: move on to the next suggested frame
         if (Object.keys(newMarks).length >= ORDER.length && nextSuggestion !== null) setTimeout(() => setFrame(nextSuggestion), 350)
     }

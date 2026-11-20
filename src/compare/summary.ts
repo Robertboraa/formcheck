@@ -117,8 +117,8 @@ export function summarize(report: Report): string[] {
             out.push(`**Rep counting with FormCheck's rules.** Every model gave the same count accuracy (off by ${facts.reps[b].mae.toFixed(2)} reps per clip), so the choice of model didn't change rep counting.`)
         else
             out.push(
-            `**Rep counting with FormCheck's rules.** ${name(b)} gave the most accurate counts (off by ${facts.reps[b].mae.toFixed(2)} reps per clip, exactly right in ${f1(facts.reps[b].exact)}% of clips)` +
-                (sorted.length > 1 ? `; ${name(sorted[sorted.length - 1])} was least accurate (off by ${facts.reps[sorted[sorted.length - 1]].mae.toFixed(2)}).` : '.'),
+            `**Rep counting with FormCheck's rules.** ${list(sorted.filter((m) => Math.abs(facts.reps[m].mae - facts.reps[b].mae) < 1e-9).map(name))} gave the most accurate counts (off by ${facts.reps[b].mae.toFixed(2)} reps per clip, exactly right in ${f1(facts.reps[b].exact)}% of clips)` +
+                `; ${list(sorted.filter((m) => Math.abs(facts.reps[m].mae - facts.reps[worst].mae) < 1e-9).map(name))} ${sorted.filter((m) => Math.abs(facts.reps[m].mae - facts.reps[worst].mae) < 1e-9).length > 1 ? 'were' : 'was'} least accurate (off by ${facts.reps[worst].mae.toFixed(2)}).`,
         )
     }
 

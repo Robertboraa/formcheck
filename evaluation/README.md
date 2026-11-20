@@ -31,7 +31,7 @@ report. Use *Download backup* there now and then: the data lives only in this br
 | MediaPipe Pose (Lite / Full / Heavy) | Google | 33 | MediaPipe Tasks, GPU (WebGL) |
 | YOLO11n / YOLO11s-pose | Ultralytics | 17 | ONNX Runtime Web (WebGPU, or CPU) |
 | MoveNet Lightning / Thunder | Google | 17 | TensorFlow.js (WebGL), with its own crop-around-the-person tracking |
-| RTMO-s | OpenMMLab (RTMPose family) | 17 | ONNX Runtime Web (WebGPU, or CPU) |
+| RTMO-s | OpenMMLab (RTMPose family) | 17 | ONNX Runtime Web on the CPU (wasm): one step of the model can't run on WebGPU |
 
 The default comparison is **MediaPipe Full, YOLO11n-pose, MoveNet Thunder and RTMO-s**: one model
 from each family. Tick others in Clip by clip to add them; your hand marks are shared by all.
@@ -105,8 +105,10 @@ one model really is closer, not just by chance.
 - **Different ways of finding the person.** MediaPipe and MoveNet track the person from frame to
   frame; YOLO and RTMO look at each frame on its own (smoothing is switched off for MoveNet so all
   results are the models' own output).
-- **Where they run.** MediaPipe and MoveNet on the GPU through WebGL; YOLO and RTMO through ONNX
-  Runtime Web on WebGPU, or on the CPU (wasm) if WebGPU isn't available. `runs.csv` records which.
+- **Where they run.** MediaPipe and MoveNet on the GPU through WebGL; YOLO through ONNX Runtime Web
+  on WebGPU (or the CPU if WebGPU isn't available); RTMO on the CPU (wasm), because one step of the
+  model can't run on WebGPU. Say this next to the speed results: RTMO's time is a CPU time.
+  `runs.csv` records where each ran.
 - **Hand marks have error too.** One person clicking joints is the reference, not perfect truth. If
   you can, mark 20–30 frames twice, a week apart, and report how far apart your own clicks are.
 - **Two-dimensional angles.** Angles are measured in the image, so camera angle changes them. That

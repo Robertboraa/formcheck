@@ -153,20 +153,37 @@ export function addRows(data: Dataset, kind: FileKind, rows: Raw[]): Dataset {
     return next
 }
 
+// a clip's name as the app stores it: spaces at the start or end of a file name are dropped,
+// so the model runs, the hand marks and the rep count always match up
+export const clipName = (name: string) => name.trim()
+
+// tidies names in data saved by an earlier version (which could keep a leading space)
+export function cleanNames(data: Dataset): Dataset {
+    return {
+        frames: data.frames.map((f) => (f.video === clipName(f.video) ? f : { ...f, video: clipName(f.video) })),
+        runs: data.runs.map((r) => ({ ...r, video: clipName(r.video) })),
+        keypoints: data.keypoints.map((k) => ({ ...k, video: clipName(k.video) })),
+        clips: data.clips.map((c) => ({ ...c, video: clipName(c.video) })),
+    }
+}
+
 // replaces every hand mark of one clip (used while marking, so the results update as you click)
 export function setClipKeypoints(data: Dataset, video: string, rows: KeypointRow[]): Dataset {
-    return { ...data, keypoints: [...data.keypoints.filter((k) => k.video !== video), ...rows] }
+    const v = clipName(video)
+    return { ...data, keypoints: [...data.keypoints.filter((k) => k.video !== v), ...rows.map((r) => ({ ...r, video: v }))] }
 }
 
 // replaces one clip's run for one model
-export function setClipRun(data: Dataset, video: string, model: string, frames: Raw[], run: Raw): Dataset {
+export function setClipRun(data: Dataset, name: string, model: string, frames: Raw[], run: Raw): Dataset {
+    const video = clipName(name)
     const keepFrames = data.frames.filter((f) => !(f.video === video && f.model === model))
     const keepRuns = data.runs.filter((r) => !(r.video === video && r.model === model))
     const next = addRows({ ...data, frames: keepFrames, runs: keepRuns }, 'frames', frames)
     return addRows(next, 'runs', [run])
 }
 
-export function removeClip(data: Dataset, video: string): Dataset {
+export function removeClip(data: Dataset, name: string): Dataset {
+    const video = clipName(name)
     return {
         frames: data.frames.filter((f) => f.video !== video),
         runs: data.runs.filter((r) => r.video !== video),
@@ -176,7 +193,8 @@ export function removeClip(data: Dataset, video: string): Dataset {
 }
 
 // the real number of reps in a clip (typed in by hand); NaN clears it
-export function setClipReps(data: Dataset, video: string, reps: number): Dataset {
+export function setClipReps(data: Dataset, name: string, reps: number): Dataset {
+    const video = clipName(name)
     const rest = data.clips.filter((c) => c.video !== video)
     return { ...data, clips: Number.isFinite(reps) ? [...rest, { video, reps }] : rest }
 }
@@ -209,7 +227,8 @@ export function toRows(data: Dataset) {
 }
 
 // just one clip's data
-export function clipData(data: Dataset, video: string): Dataset {
+export function clipData(data: Dataset, name: string): Dataset {
+    const video = clipName(name)
     return {
         frames: data.frames.filter((f) => f.video === video),
         runs: data.runs.filter((r) => r.video === video),

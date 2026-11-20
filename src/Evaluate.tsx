@@ -54,7 +54,7 @@ function Evaluate({ onResults }: { onResults?: (r: Results) => void }) {
                     await loadVideo(video, file)
                     const out = await runClip({
                         video,
-                        name: file.name,
+                        name: file.name.trim(),
                         model,
                         fps,
                         loadMs,

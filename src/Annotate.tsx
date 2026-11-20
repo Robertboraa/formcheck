@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import JointMarker from './JointMarker'
 import { download, toCsv } from './csv'
-import type { KeypointRow } from './compare/data'
+import { clipName, type KeypointRow } from './compare/data'
 
 // The Mark joints tab: mark any clip by hand, outside the clip-by-clip flow.
 // Marks are saved with the rest of the study data as you click.
@@ -14,7 +14,7 @@ type Props = {
 function Annotate({ keypoints, onChange }: Props) {
     const [file, setFile] = useState<File | null>(null)
     const [fps, setFps] = useState(30)
-    const marks = file ? keypoints.filter((k) => k.video === file.name) : []
+    const marks = file ? keypoints.filter((k) => k.video === clipName(file.name)) : []
 
     function exportCsv() {
         if (!file) return
@@ -55,7 +55,7 @@ function Annotate({ keypoints, onChange }: Props) {
             file={file}
             fps={fps}
             marks={marks}
-            onChange={(rows) => onChange(file.name, rows)}
+            onChange={(rows) => onChange(clipName(file.name), rows)}
             top={picker}
             bottom={
                 <>

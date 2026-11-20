@@ -4,7 +4,7 @@ import Evaluate from './Evaluate'
 import Annotate from './Annotate'
 import Compare from './Compare'
 import { download, toCsv } from './csv'
-import { addRows, emptyDataset, removeClip, setClipKeypoints, setClipReps, setClipRun, toRows, type Dataset, type FileKind, type Raw } from './compare/data'
+import { addRows, cleanNames, emptyDataset, removeClip, setClipKeypoints, setClipReps, setClipRun, toRows, type Dataset, type FileKind, type Raw } from './compare/data'
 import { loadSaved, save } from './compare/store'
 
 // The pose model study: run clips through MediaPipe and YOLO, mark joints by hand, compare.
@@ -22,7 +22,7 @@ function Research() {
     // load what was saved last time
     useEffect(() => {
         loadSaved().then((d) => {
-            if (d) setData({ ...emptyDataset(), ...d })
+            if (d) setData(cleanNames({ ...emptyDataset(), ...d }))
             setLoaded(true)
         })
     }, [])

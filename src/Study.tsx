@@ -4,7 +4,7 @@ import { DataTable } from './Compare'
 import { clipInfo, loadVideo } from './csv'
 import { POSE_MODELS, loadPoseModel, modelInfo } from './pose'
 import { runClip, type Row } from './runner'
-import { clip as clipOf, clipData, type Dataset, type KeypointRow } from './compare/data'
+import { clip as clipOf, clipData, clipName, type Dataset, type KeypointRow } from './compare/data'
 import { buildReport, modelName } from './compare/metrics'
 import { suggestFrames } from './compare/suggest'
 import { COLOURS, fmt, pText } from './compare/report'
@@ -69,7 +69,7 @@ function Study({ data, onRun, onKeypoints, onRemove, onReps }: Props) {
         return names.sort()
     }, [data.frames, data.keypoints])
 
-    const name = file?.name ?? ''
+    const name = file ? clipName(file.name) : ''
     const clipFrames = useMemo(() => data.frames.filter((f) => f.video === name), [data.frames, name])
     const clipMarks = useMemo(() => data.keypoints.filter((k) => k.video === name), [data.keypoints, name])
     const info = clipInfo(name)
@@ -85,7 +85,8 @@ function Study({ data, onRun, onKeypoints, onRemove, onReps }: Props) {
     async function choose(f: File) {
         setFailed([])
         setFile(f)
-        const missing = usable.filter((m) => !data.runs.some((r) => r.video === f.name && r.model === m))
+        const fname = clipName(f.name)
+        const missing = usable.filter((m) => !data.runs.some((r) => r.video === fname && r.model === m))
         if (!missing.length) {
             setPhase('mark')
             return
@@ -95,7 +96,7 @@ function Study({ data, onRun, onKeypoints, onRemove, onReps }: Props) {
         const video = videoRef.current
         if (!video) return
         const problems: string[] = []
-        let ran = data.runs.some((r) => r.video === f.name)
+        let ran = data.runs.some((r) => r.video === fname)
         try {
             await loadVideo(video, f)
         } catch (err) {
@@ -111,7 +112,7 @@ function Study({ data, onRun, onKeypoints, onRemove, onReps }: Props) {
                 const loadMs = performance.now() - loadStart
                 const out = await runClip({
                     video,
-                    name: f.name,
+                    name: fname,
                     model,
                     fps: FPS,
                     loadMs,
@@ -122,7 +123,7 @@ function Study({ data, onRun, onKeypoints, onRemove, onReps }: Props) {
                 })
                 model.close()
                 if (!out.complete) return
-                onRun(f.name, id, out.frames, out.run)
+                onRun(fname, id, out.frames, out.run)
                 ran = true
             } catch (err) {
                 // one model failing (e.g. not downloaded) shouldn't stop the others
