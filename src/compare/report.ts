@@ -1,6 +1,10 @@
 // Writes the comparison as a Markdown report, ready to paste into the paper.
 
 import { modelName, type Cell, type Report, type Table } from './metrics'
+import { summarize } from './summary'
+
+// chart and card colours per model, from the app's plate colours
+export const COLOURS = ['#1e4fa8', '#e9b308', '#c42a1f', '#586170', '#17202e']
 
 export function fmt(v: Cell, digits = 3): string {
     if (v === null || v === undefined) return '–'
@@ -28,13 +32,14 @@ function mdTable(t: Table) {
 const fixed = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '–' : v.toFixed(Math.abs(v) >= 10 ? 1 : 3))
 
 export function toMarkdown(report: Report) {
-    const [A, B] = report.models
     const out: string[] = ['# Pose model comparison: ' + report.models.map(modelName).join(' vs '), '']
     out.push(
         'Every model ran the same videos, frame by frame. Joint angles from each model were compared with angles from joints marked by hand on the same frames.',
         '',
     )
     const v = report.verdict
+    const findings = summarize(report)
+    if (findings.length) out.push('## What the data says', '', ...findings.flatMap((l) => [l, '']))
     if (v) {
         out.push('## Overall', '')
         if (Object.keys(v.values).length) {
@@ -52,19 +57,18 @@ export function toMarkdown(report: Report) {
             }),
         )
         out.push('Measures won: ' + Object.entries(v.wins).map(([m, n]) => `${modelName(m)} ${n}`).join(', '), '')
-        if (v.situations.length && A && B) {
+        if (v.situations.length) {
             out.push('### Which model to use where', '')
             out.push(
                 mdTable({
                     id: 'where',
                     title: 'Where',
-                    columns: ['situation', 'marked angles', `${modelName(A)} °`, `${modelName(B)} °`, 'use', 'p'],
+                    columns: ['situation', 'marked angles', ...report.models.map((m) => `${modelName(m)} °`), 'use', 'p (best vs runner-up)'],
                     rows: v.situations.map((r) => [
                         `${r.dimension}: ${r.situation}`,
                         r.n,
-                        fixed(r.values[A]),
-                        fixed(r.values[B]),
-                        r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie' ? modelName(r.better) : 'no real difference',
+                        ...report.models.map((m) => fixed(r.values[m])),
+                        r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie' ? modelName(r.better) : 'no clear winner',
                         r.p,
                     ]),
                 }),

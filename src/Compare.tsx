@@ -1,35 +1,53 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { download } from './csv'
 import { detectKind, parseCsv, type Dataset, type FileKind } from './compare/data'
-import { buildReport, modelName, type Chart, type Report, type Table } from './compare/metrics'
-import { fmt, fmtP, pText, tableCsv, toMarkdown } from './compare/report'
+import { buildReport, modelName, type Chart, type Report, type Section, type Table } from './compare/metrics'
+import { COLOURS, fmt, fmtP, pText, tableCsv, toMarkdown } from './compare/report'
+import { summarize } from './compare/summary'
+import { chartToSvg } from './compare/chart'
+import { buildBundle } from './compare/bundle'
+import FrameGallery from './FrameGallery'
 
 // The pose model comparison: batch-run joints + hand-marked joints in; angle accuracy, which model
 // is better in which situation, consistency checks and speed out.
 
-export type LoadedFile = { name: string; kind: FileKind; rows: number }
-
-const COLOURS = ['#1e4fa8', '#e9b308', '#c42a1f', '#586170', '#17202e']
-
-const KIND_LABEL: Record<FileKind, string> = {
-    frames: 'Batch run: joints per frame',
-    runs: 'Batch run: summary',
-    keypoints: 'Hand-marked joints',
-    unknown: 'Not recognised',
-}
 
 type Props = {
     data: Dataset
-    files: LoadedFile[]
-    onAdd: (name: string, kind: FileKind, rows: Record<string, unknown>[]) => void
+    onAdd: (kind: FileKind, rows: Record<string, unknown>[]) => void
     onClear: () => void
+    onBackup: () => void
 }
 
-function Compare({ data, files, onAdd, onClear }: Props) {
+function Compare({ data, onAdd, onClear, onBackup }: Props) {
     const [error, setError] = useState('')
     const report = useMemo(() => buildReport(data), [data])
     const colour = (model: string) => COLOURS[Math.max(0, report.models.indexOf(model)) % COLOURS.length]
-    const hasAnything = files.length > 0
+    const colourMap = useMemo(() => Object.fromEntries(report.models.map((m, i) => [m, COLOURS[i % COLOURS.length]])), [report.models])
+    const hasAnything = data.frames.length > 0 || data.keypoints.length > 0
+    const [zipping, setZipping] = useState(false)
+    const clips = new Set(data.frames.map((f) => f.video)).size
+
+    // one zip with everything for the paper
+    function downloadAll() {
+        setZipping(true)
+        setTimeout(() => {
+            try {
+                const zip = buildBundle(data, report)
+                const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: 'application/zip' }))
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `formcheck-study-${new Date().toISOString().slice(0, 10)}.zip`
+                a.click()
+                setTimeout(() => URL.revokeObjectURL(url), 2000)
+            } catch (err) {
+                setError(err instanceof Error ? err.message : String(err))
+            } finally {
+                setZipping(false)
+            }
+        }, 50)
+    }
+    const marked = new Set(data.keypoints.map((k) => `${k.video}|${k.frame}`)).size
 
     async function addFiles(list: FileList | null) {
         setError('')
@@ -40,7 +58,7 @@ function Compare({ data, files, onAdd, onClear }: Props) {
                 setError(`${file.name}: not a FormCheck CSV (frames, runs or keypoints).`)
                 continue
             }
-            onAdd(file.name, kind, rows)
+            onAdd(kind, rows)
         }
     }
 
@@ -50,14 +68,24 @@ function Compare({ data, files, onAdd, onClear }: Props) {
                 <div className="compare-data-head">
                     <div>
                         <span className="label">Data</span>
+                        <p className="small">
+                            <b>{clips}</b> clips run · <b>{report.models.length}</b> models · <b>{marked}</b> frames marked by hand
+                        </p>
                         <p className="muted small">
-                            Add the <b>frames</b> and <b>runs</b> CSVs from Batch evaluation and your <b>keypoints</b> CSVs
-                            from Mark joints. Anything you ran or marked in this session is already here.
+                            Everything from Clip by clip, Batch run and Mark joints is saved in this browser and shows here.
+                            <b> Download everything</b> gives one zip with the report, every table and chart, all the data
+                            and how the study was run: send that for writing the paper. To add data from another computer,
+                            load its CSV files.
                         </p>
                     </div>
                     <div className="actions">
-                        <label className="btn primary">
-                            Add CSV files
+                        {hasAnything && (
+                            <button className="btn primary" onClick={downloadAll} disabled={zipping}>
+                                {zipping ? 'Preparing…' : 'Download everything (.zip)'}
+                            </button>
+                        )}
+                        <label className="btn">
+                            Load CSV files
                             <input
                                 type="file"
                                 accept=".csv,text/csv"
@@ -70,24 +98,18 @@ function Compare({ data, files, onAdd, onClear }: Props) {
                             />
                         </label>
                         {hasAnything && (
-                            <button className="btn" onClick={onClear}>
-                                Clear
-                            </button>
+                            <>
+                                <button className="btn" onClick={onBackup}>
+                                    Download backup
+                                </button>
+                                <button className="btn danger" onClick={onClear}>
+                                    Clear all
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>
                 {error && <p className="form-error">{error}</p>}
-                {hasAnything && (
-                    <ul className="loaded">
-                        {files.map((f, i) => (
-                            <li key={i}>
-                                <span className={`kind ${f.kind}`}>{KIND_LABEL[f.kind]}</span>
-                                <span className="loaded-name">{f.name}</span>
-                                <span className="muted">{f.rows.toLocaleString()} rows</span>
-                            </li>
-                        ))}
-                    </ul>
-                )}
                 {report.missing.length > 0 && hasAnything && (
                     <ul className="missing">
                         {report.missing.map((m) => (
@@ -97,33 +119,23 @@ function Compare({ data, files, onAdd, onClear }: Props) {
                 )}
             </section>
 
+            {report.verdict && <Findings report={report} />}
+
             {report.verdict && <VerdictCard report={report} colour={colour} />}
 
             {report.sections.map((s) => (
-                <section key={s.id} className="card compare-section">
-                    <h3>{s.title}</h3>
-                    <p className="muted">{s.intro}</p>
-                    {s.charts.map((c) => (
-                        <BarChart key={c.id} chart={c} colours={report.models.map(colour)} />
-                    ))}
-                    {s.tables.map((t) => (
-                        <DataTable key={t.id} table={t} />
-                    ))}
-                    {s.notes.map((n) => (
-                        <p key={n} className="muted small">
-                            {n}
-                        </p>
-                    ))}
-                </section>
+                <Fragment key={s.id}>
+                    <SectionCard section={s} colours={report.models.map(colour)} />
+                    {s.id === 'situations' && <FrameGallery data={data} worst={report.worst} models={report.models} colours={colourMap} />}
+                </Fragment>
             ))}
-
             {!hasAnything && (
                 <section className="card compare-empty">
                     <p>
-                        <b>How it works:</b> run your clips through <b>Batch evaluation</b> with MediaPipe and YOLO ticked,
-                        then mark joints on some frames in <b>Mark joints</b>. This page then shows how far each model's
-                        angles are from yours, which model is better in which situation (camera angle, light, distance,
-                        exercise, how bent the joint is), consistency checks, speed, and a report to download.
+                        <b>Nothing yet.</b> Go to <b>Clip by clip</b>, pick a video, and mark the suggested frames. This page
+                        then adds up every clip: how far each model's angles are from yours, which model is better in which
+                        situation (camera angle, light, distance, exercise, how bent the joint is), consistency checks,
+                        speed, and a report to download.
                     </p>
                 </section>
             )}
@@ -131,13 +143,55 @@ function Compare({ data, files, onAdd, onClear }: Props) {
     )
 }
 
+// the findings in plain words, at the top of the page
+function Findings({ report }: { report: Report }) {
+    const lines = summarize(report)
+    if (!lines.length) return null
+    return (
+        <section className="card findings">
+            <span className="label">What the data says</span>
+            {lines.map((l, i) => (
+                <p key={i} dangerouslySetInnerHTML={{ __html: md(l) }} />
+            ))}
+            <p className="muted small">Written from the numbers below, and updated as you add clips. Every "clearly better" is backed by a significance test.</p>
+        </section>
+    )
+}
+
+// **bold** and _italic_ only; the text comes from summarize(), never from the user
+const md = (t: string) =>
+    t
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/(^|\s)_(.+?)_(?=\s|$)/g, '$1<i>$2</i>')
+
+function SectionCard({ section: s, colours }: { section: Section; colours: string[] }) {
+    return (
+        <section className="card compare-section">
+            <h3>{s.title}</h3>
+            <p className="muted">{s.intro}</p>
+            {s.charts.map((c) => (
+                <BarChart key={c.id} chart={c} colours={colours} />
+            ))}
+            {s.tables.map((t) => (
+                <DataTable key={t.id} table={t} />
+            ))}
+            {s.notes.map((n) => (
+                <p key={n} className="muted small">
+                    {n}
+                </p>
+            ))}
+        </section>
+    )
+}
+
 function VerdictCard({ report, colour }: { report: Report; colour: (m: string) => string }) {
     const v = report.verdict!
-    const [A, B] = report.models
     const winner = v.winner && v.winner !== 'tie' ? v.winner : null
     const hasAngles = Object.keys(v.values).length > 0
     const significant = v.p !== null && v.p < 0.05
-    const used = v.situations.filter((r) => r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie')
+    const used = v.situations.filter((r) => r.n >= 20 && r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie')
     return (
         <section className="card verdict-card">
             <div className="verdict-head">
@@ -152,14 +206,14 @@ function VerdictCard({ report, colour }: { report: Report; colour: (m: string) =
                                 accurately
                             </>
                         ) : (
-                            'Both models measure angles equally well'
+                            'The models measure angles equally well'
                         )}
                     </h2>
                     {winner && (
                         <p className="muted">
                             {significant
-                                ? `Across ${v.n} marked angles the difference is statistically significant (Wilcoxon ${pText(v.p)}), so it isn't down to chance.`
-                                : `But across ${v.n} marked angles the difference is not statistically significant (Wilcoxon ${pText(v.p)}): with this data the models can't be told apart overall.`}
+                                ? `Across ${v.n} marked angles it is significantly closer than the runner-up (Wilcoxon ${pText(v.p)}), so it isn't down to chance.`
+                                : `But across ${v.n} marked angles the gap to the runner-up is not statistically significant (Wilcoxon ${pText(v.p)}): with this data they can't be told apart overall.`}
                         </p>
                     )}
                 </div>
@@ -179,10 +233,14 @@ function VerdictCard({ report, colour }: { report: Report; colour: (m: string) =
             {v.recommendations.length > 0 && (
                 <div className="recommend">
                     <span className="label">Which model to use where</span>
-                    {used.length === 0 && <p className="muted small">No situation shows a real difference yet (all p ≥ 0.05).</p>}
+                    <p className="muted small">
+                        The best model in each situation, tested against the runner-up. "Use" only appears when the gap is
+                        real (p &lt; 0.05) and there are at least 20 marked angles.
+                        {used.length === 0 && ' No situation shows a real difference yet.'}
+                    </p>
                     <div className="recommend-grid">
                         {v.situations.map((r) => {
-                            const real = r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie'
+                            const real = r.n >= 20 && r.p !== null && r.p < 0.05 && r.better && r.better !== 'tie'
                             return (
                                 <div key={r.dimension + r.situation} className={`recommend-item ${real ? 'real' : ''}`} style={real ? { borderLeftColor: colour(r.better!) } : undefined}>
                                     <small className="muted">{r.dimension}</small>
@@ -193,11 +251,16 @@ function VerdictCard({ report, colour }: { report: Report; colour: (m: string) =
                                                 Use <b style={{ color: colour(r.better!) }}>{modelName(r.better!)}</b>
                                             </>
                                         ) : (
-                                            <span className="muted">No real difference</span>
+                                            <span className="muted">
+                                                No clear winner{r.better && r.better !== 'tie' ? ` (${modelName(r.better)} slightly ahead)` : ''}
+                                            </span>
                                         )}
                                     </span>
                                     <small className="muted">
-                                        {fmt(r.values[A] ?? null, 1)}° vs {fmt(r.values[B] ?? null, 1)}° · {r.p === null ? 'p –' : pText(r.p)}
+                                        {r.better && r.runnerUp && r.better !== 'tie'
+                                            ? `${fmt(r.values[r.better] ?? null, 1)}° vs ${fmt(r.values[r.runnerUp] ?? null, 1)}° (${modelName(r.runnerUp)})`
+                                            : '–'}{' '}
+                                        · {r.p === null ? 'p –' : pText(r.p)}
                                     </small>
                                 </div>
                             )
@@ -250,7 +313,7 @@ function VerdictCard({ report, colour }: { report: Report; colour: (m: string) =
     )
 }
 
-function DataTable({ table }: { table: Table }) {
+export function DataTable({ table }: { table: Table }) {
     return (
         <div className="data-block">
             <div className="data-block-head">
@@ -292,79 +355,19 @@ function DataTable({ table }: { table: Table }) {
     )
 }
 
-// grouped horizontal bars: one row per group, one bar per model.
-// Styles are written onto the SVG itself, so "Download SVG" gives a figure ready for the paper.
+// one chart, drawn by chartToSvg so the downloaded SVG is the same picture
 function BarChart({ chart, colours }: { chart: Chart; colours: string[] }) {
-    const svgRef = useRef<SVGSVGElement>(null)
-    const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null && Number.isFinite(v))
-    if (!values.length) return null
-    const max = chart.max ?? Math.max(...values) * 1.15
-    const bar = 16
-    const gap = 4
-    const groupH = chart.series.length * (bar + gap) + 14
-    const labelW = 190
-    const width = 900
-    const plotW = width - labelW - 70
-    const top = 34
-    const height = top + chart.groups.length * groupH + 30
-    const font = 'Archivo, Helvetica, Arial, sans-serif'
-    const digits = max < 5 ? 2 : 1
-
-    function save() {
-        const svg = svgRef.current
-        if (!svg) return
-        const text = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(svg)}`
-        download(`${chart.id}.svg`, text, 'image/svg+xml')
-    }
-
+    const svg = chartToSvg(chart, colours)
+    if (!svg) return null
     return (
         <figure className="bar-chart">
             <figcaption>
                 <b>{chart.title}</b>
-                <button className="link muted small" onClick={save}>
+                <button className="link muted small" onClick={() => download(`${chart.id}.svg`, `<?xml version="1.0" encoding="UTF-8"?>\n${svg}`, 'image/svg+xml')}>
                     Download SVG
                 </button>
             </figcaption>
-            <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={chart.title} fontFamily={font}>
-                <rect width={width} height={height} fill="#ffffff" />
-                {chart.series.map((s, i) => (
-                    <g key={s.name} transform={`translate(${labelW + i * 170} 10)`}>
-                        <rect width={12} height={12} fill={colours[i]} rx={2} />
-                        <text x={18} y={11} fontSize={13} fill="#586170">
-                            {s.name}
-                        </text>
-                    </g>
-                ))}
-                {[0, 0.25, 0.5, 0.75, 1].map((t) => (
-                    <g key={t}>
-                        <line x1={labelW + t * plotW} x2={labelW + t * plotW} y1={top - 4} y2={height - 26} stroke="#ebece8" />
-                        <text x={labelW + t * plotW} y={height - 10} textAnchor="middle" fontSize={12} fill="#586170">
-                            {(t * max).toFixed(digits)}
-                            {t === 1 ? ` ${chart.yLabel}` : ''}
-                        </text>
-                    </g>
-                ))}
-                {chart.groups.map((g, gi) => (
-                    <g key={g} transform={`translate(0 ${top + gi * groupH})`}>
-                        <text x={labelW - 12} y={(chart.series.length * (bar + gap)) / 2 + 3} textAnchor="end" fontSize={13} fontWeight={600} fill="#17202e">
-                            {g}
-                        </text>
-                        {chart.series.map((s, si) => {
-                            const v = s.values[gi]
-                            const ok = v !== null && Number.isFinite(v)
-                            const w = ok ? Math.max(1, (v / max) * plotW) : 0
-                            return (
-                                <g key={s.name} transform={`translate(${labelW} ${si * (bar + gap)})`}>
-                                    <rect width={w} height={bar} fill={colours[si]} rx={1} />
-                                    <text x={w + 6} y={bar - 4} fontSize={12} fill="#586170">
-                                        {ok ? v.toFixed(digits) : 'n/a'}
-                                    </text>
-                                </g>
-                            )
-                        })}
-                    </g>
-                ))}
-            </svg>
+            <div className="bar-chart-svg" dangerouslySetInnerHTML={{ __html: svg }} />
         </figure>
     )
 }

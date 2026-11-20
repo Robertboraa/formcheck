@@ -47,9 +47,9 @@ Browser (React + TypeScript)                         API (Node + Express)       
 - **Visibility checks.** A rule is only applied when MediaPipe can clearly see the joints it depends on. The app says less rather than guess.
 - **Exercises are configuration.** Everything specific to an exercise lives in `src/exercises.ts`: the angle that drives counting, the measurements, and the rules, each pointing at the body part it's about.
 
-### Pose models: MediaPipe vs YOLO
+### Pose models: MediaPipe, YOLO, MoveNet and RTMO
 
-- **Two model families behind one interface** (`src/pose.ts`). MediaPipe Pose (Lite / Full / Heavy, 33 points) runs through MediaPipe Tasks on the GPU. Ultralytics YOLO11n/s-pose (17 COCO points) is exported to ONNX and runs through ONNX Runtime Web on WebGPU, or on the CPU (wasm) when WebGPU isn't there. YOLO's points are put into MediaPipe's numbering, so the rules don't know which model is running.
+- **Four model families behind one interface** (`src/pose.ts`): MediaPipe Pose (Lite / Full / Heavy, 33 points) through MediaPipe Tasks; Ultralytics YOLO11n/s-pose and OpenMMLab RTMO-s (RTMPose family) exported to ONNX and run with ONNX Runtime Web (WebGPU, or CPU); Google MoveNet Lightning / Thunder through TensorFlow.js. Every model's points are put into MediaPipe's numbering, so the rules and the comparison don't care which model is running. RTMO is downloaded once with `npm run get-rtmo`.
 - **One rules engine** (`src/engine.ts`) is shared by the live camera and the batch evaluation, so both models are always judged by exactly the same code.
 - **Checked against the reference:** the browser YOLO output is within about 1 px of Ultralytics' Python output on the same frame.
 - **Research tools** (*Research* in the top bar): batch evaluation steps through every frame of a set of videos with each model and saves where it put every joint; a joint-marking tool records hand-placed joints as ground truth; and **Compare** measures each model's joint angles against the hand marks — overall and split by situation (camera angle, light, distance, exercise, how bent the joint is) — with significance tests, consistency checks that need no marking (steadiness, bone-length consistency, model agreement), speed, charts and a Markdown report. See [evaluation/README.md](evaluation/README.md).
@@ -155,7 +155,10 @@ npm run dev
 src/
   App.tsx          screens and navigation
   Camera.tsx       live video, frame loop, cues, skeleton drawing
-  pose.ts          pose models: MediaPipe and YOLO11-pose (ONNX), one interface
+  pose.ts          pose models: MediaPipe, YOLO11-pose, MoveNet, RTMO, one interface
+  Study.tsx        clip by clip: run the models, mark suggested frames, see the clip's result
+  JointMarker.tsx  clicking joints by hand (the ground truth)
+  runner.ts        runs one clip through one model, every frame
   engine.ts        rep counting and form judging, shared by live and batch
   exercises.ts     one entry per exercise: measurements, thresholds, rules
   Research.tsx     research tools: Evaluate.tsx (batch runs), Annotate.tsx (joint marking), Compare.tsx (model comparison)
@@ -172,7 +175,7 @@ server/
   src/sessions.ts  save, list, get and delete sessions
   src/schema.sql   database tables
   test/            API tests
-public/models/     YOLO11n-pose and YOLO11s-pose (ONNX)
+public/models/     YOLO11n/s-pose (ONNX), MoveNet Lightning/Thunder (TF.js), RTMO-s after npm run get-rtmo
 evaluation/        model comparison: how to film, mark and compare
 ```
 
@@ -187,7 +190,7 @@ evaluation/        model comparison: how to film, mark and compare
 ## Roadmap
 
 - [x] YOLO11-pose as a second pose model, with batch evaluation and joint-marking tools
-- [ ] Evaluation and paper: MediaPipe vs YOLO-pose joint-angle accuracy, by situation
+- [ ] Evaluation and paper: joint-angle accuracy of MediaPipe, YOLO, MoveNet and RTMO, by situation
 - [ ] Deploy the app and API with a live link
 - [ ] Bundle the pose model so the analysis works offline
 - [ ] Pull-ups and dumbbell shoulder press

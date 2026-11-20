@@ -19,7 +19,10 @@ export type FrameRow = {
     pts: Float32Array
 }
 
-export type RunRow = { video: string; model: string; modelName: string; backend: string }
+export type RunRow = { video: string; model: string; modelName: string; backend: string; loadMs: number; bytes: number }
+
+// what you know about a clip that the models can't tell you: how many reps were really done
+export type ClipNote = { video: string; reps: number }
 
 export type KeypointRow = { video: string; frame: number; side: 'l' | 'r'; joint: string; x: number; y: number }
 
@@ -27,9 +30,10 @@ export type Dataset = {
     frames: FrameRow[]
     runs: RunRow[]
     keypoints: KeypointRow[]
+    clips: ClipNote[]
 }
 
-export const emptyDataset = (): Dataset => ({ frames: [], runs: [], keypoints: [] })
+export const emptyDataset = (): Dataset => ({ frames: [], runs: [], keypoints: [], clips: [] })
 
 export const JOINT_INDEX: Record<string, number> = Object.fromEntries(JOINTS.map(([name], i) => [name, i]))
 
@@ -77,13 +81,14 @@ export function parseCsv(text: string): Raw[] {
         .map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])))
 }
 
-export type FileKind = 'frames' | 'runs' | 'keypoints' | 'unknown'
+export type FileKind = 'frames' | 'runs' | 'keypoints' | 'clips' | 'unknown'
 
 export function detectKind(rows: Raw[]): FileKind {
     const cols = new Set(Object.keys(rows[0] ?? {}))
     if (cols.has('joint') && cols.has('x') && cols.has('frame')) return 'keypoints'
     if (cols.has('model') && cols.has('frame') && cols.has('l_knee_x')) return 'frames'
     if (cols.has('backend') && cols.has('model_name')) return 'runs'
+    if (cols.has('video') && cols.has('reps') && !cols.has('model')) return 'clips'
     return 'unknown'
 }
 
@@ -120,13 +125,14 @@ function toFrame(r: Raw): FrameRow | null {
 
 function toRun(r: Raw): RunRow | null {
     if (!str(r.video) || !str(r.model)) return null
-    return { video: str(r.video), model: str(r.model), modelName: str(r.model_name), backend: str(r.backend) }
+    return { video: str(r.video), model: str(r.model), modelName: str(r.model_name), backend: str(r.backend), loadMs: num(r.load_ms), bytes: num(r.model_bytes) }
 }
 
+// a joint marked "not visible" is kept with x and y empty (NaN)
 function toKeypoint(r: Raw): KeypointRow | null {
     const x = num(r.x)
     const y = num(r.y)
-    if (!str(r.video) || !Number.isFinite(x) || !Number.isFinite(y)) return null
+    if (!str(r.video) || !str(r.joint) || !Number.isFinite(num(r.frame))) return null
     return { video: str(r.video), frame: num(r.frame), side: str(r.side) === 'r' ? 'r' : 'l', joint: str(r.joint), x, y }
 }
 
@@ -142,6 +148,72 @@ export function addRows(data: Dataset, kind: FileKind, rows: Raw[]): Dataset {
     const next = { ...data }
     if (kind === 'frames') next.frames = dedupe([...data.frames, ...keep(rows.map(toFrame))], (f) => `${f.video}|${f.model}|${f.frame}`)
     if (kind === 'runs') next.runs = dedupe([...data.runs, ...keep(rows.map(toRun))], (r) => `${r.video}|${r.model}`)
+    if (kind === 'clips') next.clips = dedupe([...data.clips, ...rows.filter((r) => str(r.video) && Number.isFinite(num(r.reps))).map((r) => ({ video: str(r.video), reps: num(r.reps) }))], (c) => c.video)
     if (kind === 'keypoints') next.keypoints = dedupe([...data.keypoints, ...keep(rows.map(toKeypoint))], (k) => `${k.video}|${k.frame}|${k.joint}`)
     return next
+}
+
+// replaces every hand mark of one clip (used while marking, so the results update as you click)
+export function setClipKeypoints(data: Dataset, video: string, rows: KeypointRow[]): Dataset {
+    return { ...data, keypoints: [...data.keypoints.filter((k) => k.video !== video), ...rows] }
+}
+
+// replaces one clip's run for one model
+export function setClipRun(data: Dataset, video: string, model: string, frames: Raw[], run: Raw): Dataset {
+    const keepFrames = data.frames.filter((f) => !(f.video === video && f.model === model))
+    const keepRuns = data.runs.filter((r) => !(r.video === video && r.model === model))
+    const next = addRows({ ...data, frames: keepFrames, runs: keepRuns }, 'frames', frames)
+    return addRows(next, 'runs', [run])
+}
+
+export function removeClip(data: Dataset, video: string): Dataset {
+    return {
+        frames: data.frames.filter((f) => f.video !== video),
+        runs: data.runs.filter((r) => r.video !== video),
+        keypoints: data.keypoints.filter((k) => k.video !== video),
+        clips: data.clips.filter((c) => c.video !== video),
+    }
+}
+
+// the real number of reps in a clip (typed in by hand); NaN clears it
+export function setClipReps(data: Dataset, video: string, reps: number): Dataset {
+    const rest = data.clips.filter((c) => c.video !== video)
+    return { ...data, clips: Number.isFinite(reps) ? [...rest, { video, reps }] : rest }
+}
+
+// everything as three CSV-ready row lists, for backups and the paper's appendix
+export function toRows(data: Dataset) {
+    const frames = data.frames.map((f) => {
+        const row: Record<string, string | number> = {
+            video: f.video,
+            model: f.model,
+            frame: f.frame,
+            time: f.time,
+            width: f.width,
+            height: f.height,
+            ms: f.ms,
+            detected: f.detected ? 1 : 0,
+            side: f.side,
+        }
+        JOINTS.forEach(([name], i) => {
+            row[`${name}_x`] = f.pts[i * 3]
+            row[`${name}_y`] = f.pts[i * 3 + 1]
+            row[`${name}_v`] = f.pts[i * 3 + 2]
+        })
+        return row
+    })
+    const runs = data.runs.map((r) => ({ video: r.video, model: r.model, model_name: r.modelName, backend: r.backend, load_ms: r.loadMs, model_bytes: r.bytes }))
+    const keypoints = data.keypoints.filter((k) => Number.isFinite(k.x)).map((k) => ({ video: k.video, frame: k.frame, side: k.side, joint: k.joint, x: k.x, y: k.y }))
+    const clips = data.clips.map((c) => ({ video: c.video, reps: c.reps }))
+    return { frames, runs, keypoints, clips }
+}
+
+// just one clip's data
+export function clipData(data: Dataset, video: string): Dataset {
+    return {
+        frames: data.frames.filter((f) => f.video === video),
+        runs: data.runs.filter((r) => r.video === video),
+        keypoints: data.keypoints.filter((k) => k.video === video),
+        clips: data.clips.filter((c) => c.video === video),
+    }
 }

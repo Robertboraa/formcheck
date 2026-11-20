@@ -96,3 +96,48 @@ export function tilt(a: Pt, b: Pt) {
 }
 
 export const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1])
+
+// ---------- does a score predict error? ----------
+
+function ranks(xs: number[]) {
+    const order = xs.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v)
+    const r = new Array<number>(xs.length)
+    for (let i = 0; i < order.length; ) {
+        let j = i
+        while (j + 1 < order.length && order[j + 1].v === order[i].v) j++
+        for (let k = i; k <= j; k++) r[order[k].i] = (i + j) / 2 + 1
+        i = j + 1
+    }
+    return r
+}
+
+// Spearman rank correlation: −1 to 1 (does one go down when the other goes up?)
+export function spearman(x: number[], y: number[]) {
+    const keep = x.map((v, i) => [v, y[i]]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b))
+    if (keep.length < 5) return NaN
+    const rx = ranks(keep.map((p) => p[0]))
+    const ry = ranks(keep.map((p) => p[1]))
+    const mx = mean(rx)
+    const my = mean(ry)
+    let num = 0
+    let dx = 0
+    let dy = 0
+    rx.forEach((v, i) => {
+        num += (v - mx) * (ry[i] - my)
+        dx += (v - mx) ** 2
+        dy += (ry[i] - my) ** 2
+    })
+    return dx && dy ? num / Math.sqrt(dx * dy) : NaN
+}
+
+// AUROC: the chance that a randomly picked "bad" item scores lower than a randomly picked "good" one
+// (0.5 = the score tells you nothing, 1 = it always ranks bad items below good ones)
+export function auroc(scores: number[], bad: boolean[]) {
+    const items = scores.map((s, i) => ({ s, bad: bad[i] })).filter((x) => Number.isFinite(x.s))
+    const nBad = items.filter((x) => x.bad).length
+    const nGood = items.length - nBad
+    if (!nBad || !nGood) return NaN
+    const r = ranks(items.map((x) => x.s))
+    const goodRankSum = items.reduce((sum, x, i) => sum + (x.bad ? 0 : r[i]), 0)
+    return (goodRankSum - (nGood * (nGood + 1)) / 2) / (nGood * nBad)
+}

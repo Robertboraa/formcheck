@@ -16,16 +16,20 @@ export type PoseResult = {
 export type PoseModelInfo = {
     id: string
     name: string
-    family: 'mediapipe' | 'yolo'
+    family: 'mediapipe' | 'yolo' | 'movenet' | 'rtmo'
     note: string
+    by: string // who made it
 }
 
 export const POSE_MODELS: PoseModelInfo[] = [
-    { id: 'mediapipe-full', name: 'MediaPipe Full', family: 'mediapipe', note: '33 points, the default' },
-    { id: 'mediapipe-lite', name: 'MediaPipe Lite', family: 'mediapipe', note: '33 points, fastest MediaPipe' },
-    { id: 'mediapipe-heavy', name: 'MediaPipe Heavy', family: 'mediapipe', note: '33 points, most accurate MediaPipe' },
-    { id: 'yolo11n', name: 'YOLO11n-pose', family: 'yolo', note: '17 points, no feet' },
-    { id: 'yolo11s', name: 'YOLO11s-pose', family: 'yolo', note: '17 points, no feet, larger' },
+    { id: 'mediapipe-full', name: 'MediaPipe Full', family: 'mediapipe', by: 'Google', note: '33 points, the default' },
+    { id: 'mediapipe-lite', name: 'MediaPipe Lite', family: 'mediapipe', by: 'Google', note: '33 points, fastest MediaPipe' },
+    { id: 'mediapipe-heavy', name: 'MediaPipe Heavy', family: 'mediapipe', by: 'Google', note: '33 points, most accurate MediaPipe' },
+    { id: 'yolo11n', name: 'YOLO11n-pose', family: 'yolo', by: 'Ultralytics', note: '17 points, no feet' },
+    { id: 'yolo11s', name: 'YOLO11s-pose', family: 'yolo', by: 'Ultralytics', note: '17 points, no feet, larger' },
+    { id: 'movenet-lightning', name: 'MoveNet Lightning', family: 'movenet', by: 'Google', note: '17 points, built for fast fitness apps' },
+    { id: 'movenet-thunder', name: 'MoveNet Thunder', family: 'movenet', by: 'Google', note: '17 points, the more accurate MoveNet' },
+    { id: 'rtmo-s', name: 'RTMO-s', family: 'rtmo', by: 'OpenMMLab (RTMPose family)', note: '17 points, needs a one-time download (npm run get-rtmo)' },
 ]
 
 export const DEFAULT_MODEL = 'mediapipe-full'
@@ -41,21 +45,50 @@ export interface PoseModel {
     connections: [number, number][] // bones to draw
     detect: (video: HTMLVideoElement, timeMs: number) => Promise<PoseResult>
     close: () => void
+    bytes: number // download size of the model files (0 = unknown)
+}
+
+type Loaded = Omit<PoseModel, 'bytes'>
+
+const mediapipeUrl = (variant: string) =>
+    `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${variant}/float16/1/pose_landmarker_${variant}.task`
+
+// the files each model downloads, to report its size
+function modelFiles(info: PoseModelInfo): string[] {
+    if (info.family === 'mediapipe') return [mediapipeUrl(info.id.replace('mediapipe-', ''))]
+    if (info.family === 'yolo') return [`/models/${info.id}-pose.onnx`]
+    if (info.family === 'movenet') return [`/models/${info.id}/model.json`, `/models/${info.id}/${info.id}.bin`]
+    return [`/models/${info.id}.onnx`]
+}
+
+async function sizeOf(urls: string[]) {
+    let total = 0
+    for (const url of urls) {
+        try {
+            const res = await fetch(url, { method: 'HEAD' })
+            total += Number(res.headers.get('content-length') ?? 0) || 0
+        } catch {
+            // size unknown
+        }
+    }
+    return total
 }
 
 export async function loadPoseModel(id: string): Promise<PoseModel> {
     const info = modelInfo(id)
-    return info.family === 'yolo' ? loadYolo(info) : loadMediaPipe(info)
+    const loaded =
+        info.family === 'yolo' ? await loadYolo(info) : info.family === 'movenet' ? await loadMoveNet(info) : info.family === 'rtmo' ? await loadRtmo(info) : await loadMediaPipe(info)
+    return { ...loaded, bytes: await sizeOf(modelFiles(info)) }
 }
 
 // ---------- MediaPipe ----------
 
-async function loadMediaPipe(info: PoseModelInfo): Promise<PoseModel> {
+async function loadMediaPipe(info: PoseModelInfo): Promise<Loaded> {
     const variant = info.id.replace('mediapipe-', '') // lite | full | heavy
     const vision = await FilesetResolver.forVisionTasks('/wasm')
     const landmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${variant}/float16/1/pose_landmarker_${variant}.task`,
+            modelAssetPath: mediapipeUrl(variant),
             delegate: 'GPU',
         },
         runningMode: 'VIDEO',
@@ -99,20 +132,20 @@ const COCO_BONES: [number, number][] = [
 const SIZE = 640 // the model's input size
 const MIN_PERSON_SCORE = 0.25
 
-async function loadYolo(info: PoseModelInfo): Promise<PoseModel> {
+// ONNX Runtime Web: on the GPU through WebGPU when the browser has it, otherwise on the CPU (wasm)
+async function onnxSession(url: string) {
     const ort = await import('onnxruntime-web/webgpu')
     ort.env.wasm.wasmPaths = `${location.origin}/ort/`
-
-    const url = `/models/${info.id}-pose.onnx`
-    let session: Awaited<ReturnType<typeof ort.InferenceSession.create>>
-    let backend = 'webgpu'
     try {
         if (!('gpu' in navigator)) throw new Error('no WebGPU')
-        session = await ort.InferenceSession.create(url, { executionProviders: ['webgpu'] })
+        return { ort, backend: 'webgpu', session: await ort.InferenceSession.create(url, { executionProviders: ['webgpu'] }) }
     } catch {
-        backend = 'wasm'
-        session = await ort.InferenceSession.create(url, { executionProviders: ['wasm'] })
+        return { ort, backend: 'wasm', session: await ort.InferenceSession.create(url, { executionProviders: ['wasm'] }) }
     }
+}
+
+async function loadYolo(info: PoseModelInfo): Promise<Loaded> {
+    const { ort, backend, session } = await onnxSession(`/models/${info.id}-pose.onnx`)
 
     // reused every frame
     const canvas = document.createElement('canvas')
@@ -175,6 +208,113 @@ async function loadYolo(info: PoseModelInfo): Promise<PoseModel> {
                 const y = (data[(6 + k * 3) * n + best] - padY) / scale / h
                 const visibility = data[(7 + k * 3) * n + best]
                 landmarks[COCO_TO_MEDIAPIPE[k]] = { x, y, visibility }
+            }
+            return { ms: performance.now() - started, landmarks }
+        },
+        close: () => {
+            session.release()
+        },
+    }
+}
+
+// ---------- MoveNet (Google, TensorFlow.js) ----------
+// Single-person model made for fitness apps. Run through Google's pose-detection library, which also
+// crops around the person using the previous frame, as MoveNet is meant to be used.
+
+async function loadMoveNet(info: PoseModelInfo): Promise<Loaded> {
+    const tf = await import('@tensorflow/tfjs-core')
+    await import('@tensorflow/tfjs-backend-webgl')
+    const poseDetection = await import('@tensorflow-models/pose-detection')
+    await tf.setBackend('webgl')
+    await tf.ready()
+    const thunder = info.id === 'movenet-thunder'
+    const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+        modelType: thunder ? poseDetection.movenet.modelType.SINGLEPOSE_THUNDER : poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        modelUrl: `/models/${info.id}/model.json`,
+        enableSmoothing: false, // raw model output, like YOLO; MediaPipe's tracking is part of its model
+    })
+    return {
+        info,
+        backend: tf.getBackend(),
+        points: COCO_TO_MEDIAPIPE,
+        connections: COCO_BONES,
+        async detect(video, timeMs) {
+            const started = performance.now()
+            const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false }, timeMs)
+            const ms = performance.now() - started
+            const kps = poses[0]?.keypoints
+            if (!kps || !(poses[0].score === undefined || poses[0].score > 0.1)) return { ms }
+            const w = video.videoWidth
+            const h = video.videoHeight
+            const landmarks: Landmark[] = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0 }))
+            kps.slice(0, 17).forEach((k, i) => {
+                landmarks[COCO_TO_MEDIAPIPE[i]] = { x: k.x / w, y: k.y / h, visibility: k.score ?? 0 }
+            })
+            return { ms, landmarks }
+        },
+        close: () => detector.dispose(),
+    }
+}
+
+// ---------- RTMO (OpenMMLab, RTMPose family, ONNX) ----------
+// One-stage model: finds people and their joints in one pass. Pre- and post-processing follow
+// OpenMMLab's rtmlib: the frame is scaled to fit 640×640, padded grey at the bottom/right, in BGR
+// order with no normalisation; outputs are boxes (x1, y1, x2, y2, score) and 17 keypoints (x, y, score).
+
+async function loadRtmo(info: PoseModelInfo): Promise<Loaded> {
+    const url = `/models/${info.id}.onnx`
+    const check = await fetch(url, { method: 'HEAD' })
+    if (!check.ok || (check.headers.get('content-type') ?? '').includes('text/html'))
+        throw new Error(`${info.name} isn't downloaded yet. In the terminal, in the formcheck folder, run: npm run get-rtmo`)
+    const { ort, backend, session } = await onnxSession(url)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = SIZE
+    canvas.height = SIZE
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+    const input = new Float32Array(3 * SIZE * SIZE)
+
+    return {
+        info,
+        backend,
+        points: COCO_TO_MEDIAPIPE,
+        connections: COCO_BONES,
+        async detect(video) {
+            const started = performance.now()
+            const w = video.videoWidth
+            const h = video.videoHeight
+            const ratio = Math.min(SIZE / w, SIZE / h)
+            ctx.fillStyle = 'rgb(114,114,114)'
+            ctx.fillRect(0, 0, SIZE, SIZE)
+            ctx.drawImage(video, 0, 0, Math.floor(w * ratio), Math.floor(h * ratio))
+            const pixels = ctx.getImageData(0, 0, SIZE, SIZE).data
+            const plane = SIZE * SIZE
+            for (let i = 0; i < plane; i++) {
+                input[i] = pixels[i * 4 + 2] // blue
+                input[i + plane] = pixels[i * 4 + 1] // green
+                input[i + plane * 2] = pixels[i * 4] // red
+            }
+            const output = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, SIZE, SIZE]) })
+            const tensors = session.outputNames.map((n) => output[n])
+            const dets = tensors.find((t) => t.dims.length === 3)
+            const kpts = tensors.find((t) => t.dims.length === 4)
+            if (!dets || !kpts) return { ms: performance.now() - started }
+            const d = dets.data as Float32Array
+            const k = kpts.data as Float32Array
+            const people = dets.dims[1]
+            let best = -1
+            let bestScore = 0.3
+            for (let p = 0; p < people; p++) {
+                if (d[p * 5 + 4] > bestScore) {
+                    bestScore = d[p * 5 + 4]
+                    best = p
+                }
+            }
+            if (best < 0) return { ms: performance.now() - started }
+            const landmarks: Landmark[] = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0 }))
+            for (let j = 0; j < 17; j++) {
+                const o = (best * 17 + j) * 3
+                landmarks[COCO_TO_MEDIAPIPE[j]] = { x: k[o] / ratio / w, y: k[o + 1] / ratio / h, visibility: k[o + 2] }
             }
             return { ms: performance.now() - started, landmarks }
         },

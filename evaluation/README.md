@@ -1,22 +1,51 @@
-# Evaluation: MediaPipe vs YOLO-pose
+# Evaluation: comparing pose models
 
 The question: **which pose model measures joint angles more accurately, and which one is better to
 use in which situation?**
 
-Both models run on the same videos, frame by frame. On a sample of frames the joints are marked by
+The models run on the same videos, frame by frame. On a sample of frames the joints are marked by
 hand; the angles from those marks are the ground truth. Each model's angles are compared with
 them, overall and split by situation. Everything runs in the app: *Research*.
 
-## The workflow
+## The workflow: clip by clip
 
-1. **Film** the clips (plan below).
-2. **Batch evaluation** (*Research → Batch evaluation*): pick all the clips, tick *MediaPipe Full*
-   and *YOLO11n-pose*, Run. Download `frames.csv` and `runs.csv` and keep them in `data/`.
-3. **Mark joints** (*Research → Mark joints*): click the joints on a sample of frames. Download each
-   clip's keypoints CSV into `data/`.
-4. **Compare** (*Research → Compare*): anything from this session is already there; otherwise add
-   the CSVs. You get the verdict, which model to use where, every table, charts (download as SVG)
-   and a Markdown report.
+Open *Research → Clip by clip* and, for each video:
+
+1. **Pick the clip.** The ticked models run on every frame (a minute or two each).
+2. **Mark the suggested frames.** The app picks the top, halfway down and bottom of the first three
+   reps. Click the 8 joints on each; when a frame is done the next one opens.
+3. **Type the real number of reps** in the clip (it lets Results check each model's rep counting).
+4. **See that clip's result:** which model was closer to your marks, per angle.
+5. **Done · next clip.**
+
+Everything is saved in the browser as you go (refreshing or closing is fine). *Results* adds up
+every clip: the verdict, which model to use where, all the tables, charts (SVG) and a Markdown
+report. Use *Download backup* there now and then: the data lives only in this browser.
+
+*Batch run* and *Mark joints* do the same steps separately, for many clips at once or extra frames.
+
+## The models
+
+| Model | Made by | Joints | Runs on |
+|---|---|---|---|
+| MediaPipe Pose (Lite / Full / Heavy) | Google | 33 | MediaPipe Tasks, GPU (WebGL) |
+| YOLO11n / YOLO11s-pose | Ultralytics | 17 | ONNX Runtime Web (WebGPU, or CPU) |
+| MoveNet Lightning / Thunder | Google | 17 | TensorFlow.js (WebGL), with its own crop-around-the-person tracking |
+| RTMO-s | OpenMMLab (RTMPose family) | 17 | ONNX Runtime Web (WebGPU, or CPU) |
+
+The default comparison is **MediaPipe Full, YOLO11n-pose, MoveNet Thunder and RTMO-s**: one model
+from each family. Tick others in Clip by clip to add them; your hand marks are shared by all.
+
+**RTMO needs a one-time download** (OpenMMLab hosts it as a zip):
+
+```
+npm run get-rtmo
+```
+
+This saves `public/models/rtmo-s.onnx`. Commit it, so anyone who clones the repo has it too.
+
+With more than two models, every "is it really better?" test compares the best model with the
+runner-up, and the table of every pair uses Holm-corrected p-values.
 
 ## 1. Filming plan
 
@@ -56,10 +85,14 @@ clicks. Keep the frame rate at 30, the same as the batch run.
 |---|---|
 | Verdict | which model's angles are closer to the truth overall, whether that's significant, and which model to use in each situation |
 | Angle accuracy | per angle (knee, elbow, hip, body line, neck, torso lean): mean and median error, RMSE, bias (reads too big or too small), % within 5° and 10°, % missed, Wilcoxon test |
-| Which model where | angle error split by camera setup, exercise, how bent the joint is (under 90°, 90–140°, over 140°), angle, and whose clips, with the better model and p for each |
+| Which model where | angle error split by camera setup, exercise, rep phase (top / halfway / bottom), how bent the joint is, person size in the frame, angle, person and whose clips, with the best model and p (vs the runner-up) for each |
 | Joint placement | PCK@0.1 / @0.2 and error per joint as % of torso length |
 | Consistency (no marking needed, every frame) | person found %, steadiness in the first second, bone-length consistency (bones don't change length), angle jitter, agreement between the models (Bland–Altman) |
-| Speed | ms per frame, 95th percentile, FPS, Wilcoxon test |
+| Speed | ms per frame, 95th percentile, FPS, Wilcoxon test; download size and start-up time |
+| What the data says | the findings written out in plain words at the top: accuracy, where each model is better, bottom of the rep, confidence, consistency, rep counting, speed, a recommendation |
+| Worst frames | for each model, the marked frames where it was furthest from your marks, drawn over the video (choose the clips again to see them; click to download) |
+| Confidence | whether each model's own confidence score predicts its error (Spearman ρ, AUROC, error by score band) |
+| Rep counting | FormCheck's squat/push-up rules run on each model's joints; counted reps vs the real number you type in for each clip, and how often the models agree on good/bad |
 
 p-values come from paired Wilcoxon signed-rank tests on the same frames or clips: p < 0.05 means
 one model really is closer, not just by chance.
@@ -68,11 +101,12 @@ one model really is closer, not just by chance.
 
 - **Same frames, same laptop.** Every frame is processed (the video is stepped, not played), so a
   slower model never skips frames. Time is measured around the model only.
-- **YOLO has 17 points and no feet.** It can't measure anything that needs the heel or toes.
-- **MediaPipe smooths over time, YOLO doesn't.** MediaPipe's VIDEO mode tracks the person between
-  frames; YOLO looks at each frame on its own. This shows up in steadiness and jitter.
-- **Where they run.** MediaPipe on the GPU through WebGL; YOLO through ONNX Runtime Web on WebGPU,
-  or on the CPU (wasm) if WebGPU isn't available. `runs.csv` records which.
+- **Only MediaPipe has feet.** YOLO, MoveNet and RTMO use the 17 COCO points (no heel or toes).
+- **Different ways of finding the person.** MediaPipe and MoveNet track the person from frame to
+  frame; YOLO and RTMO look at each frame on its own (smoothing is switched off for MoveNet so all
+  results are the models' own output).
+- **Where they run.** MediaPipe and MoveNet on the GPU through WebGL; YOLO and RTMO through ONNX
+  Runtime Web on WebGPU, or on the CPU (wasm) if WebGPU isn't available. `runs.csv` records which.
 - **Hand marks have error too.** One person clicking joints is the reference, not perfect truth. If
   you can, mark 20–30 frames twice, a week apart, and report how far apart your own clicks are.
 - **Two-dimensional angles.** Angles are measured in the image, so camera angle changes them. That

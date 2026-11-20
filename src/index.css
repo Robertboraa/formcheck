@@ -1543,7 +1543,7 @@ button.chip {
     vertical-align: -1px;
 }
 
-.bar-chart svg {
+.bar-chart-svg svg {
     width: 100%;
     max-width: 900px;
     height: auto;
@@ -1570,6 +1570,194 @@ button.chip {
 .compare-empty p {
     margin: 0;
     max-width: 75ch;
+}
+
+
+/* ---------- clip by clip ---------- */
+.study {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.study-start {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.study-start h3,
+.study-run h3,
+.clip-result h3 {
+    margin: 4px 0 6px;
+    font-size: 24px;
+}
+
+.study-start p {
+    max-width: 68ch;
+    margin: 4px 0;
+}
+
+.study-run {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.study-run-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 16px;
+}
+
+.study-clip-name {
+    word-break: break-all;
+}
+
+.study-next {
+    margin-top: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--edge);
+}
+
+.chip.done {
+    border-color: var(--blue);
+    color: var(--blue);
+    font-weight: 700;
+}
+
+.chip.warn {
+    border-color: var(--red);
+    color: var(--red);
+}
+
+.clip-result {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.clip-result .verdict-scores {
+    max-width: 420px;
+}
+
+.save-state {
+    font-size: 13px;
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left: 3px solid var(--blue);
+}
+
+.save-state.saving {
+    border-color: var(--yellow);
+}
+
+.save-state.failed {
+    border-color: var(--red);
+    color: var(--red);
+}
+
+.offscreen-video {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+    width: 320px;
+    height: 240px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+
+.model-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.model-option {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 2px solid var(--edge);
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.model-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.model-option.on {
+    border-color: var(--blue);
+}
+
+.model-option.off {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.btn.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+
+/* ---------- findings and gallery ---------- */
+.findings {
+    border-left: 6px solid var(--blue);
+}
+
+.findings p {
+    max-width: 90ch;
+    margin: 8px 0;
+    line-height: 1.55;
+}
+
+.gallery-row {
+    margin-top: 16px;
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.gallery-item {
+    margin: 0;
+    font-size: 12px;
+}
+
+.gallery-item img,
+.gallery-empty {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: contain;
+    background: var(--rubber);
+    border-radius: 4px;
+    display: block;
+}
+
+.gallery-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9aa3b0;
+}
+
+.gallery-item figcaption {
+    margin-top: 4px;
+    word-break: break-all;
 }
 
 /* ---------- smaller screens ---------- */

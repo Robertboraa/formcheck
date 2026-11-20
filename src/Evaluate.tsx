@@ -1,23 +1,11 @@
 import { useRef, useState } from 'react'
 import { EXERCISES } from './exercises'
-import { POSE_MODELS, loadPoseModel, type Landmark } from './pose'
-import { JOINTS, clipInfo, download, exerciseFromName, frameTime, loadVideo, seek, toCsv } from './csv'
+import { POSE_MODELS, loadPoseModel } from './pose'
+import { clipInfo, download, exerciseFromName, loadVideo, toCsv } from './csv'
+import { runClip, type Row } from './runner'
 
-// Batch run: every chosen video through every chosen pose model, frame by frame. It saves where
-// each model put each joint on every frame, and how long it took. The Compare tab measures those
-// joints against the hand-marked ones.
-//
-// Every frame is processed (the video is stepped, not played), so a slower model never skips
-// frames. The time per frame is measured around the model only, not the stepping.
-
-// which side of the body faces the camera: the side whose joints the model sees more clearly
-function sideOf(l: Landmark[] | undefined): 'l' | 'r' {
-    if (!l) return 'l'
-    const score = (ids: number[]) => ids.reduce((s, i) => s + (l[i]?.visibility ?? 0), 0)
-    return score([11, 13, 15, 23, 25, 27]) >= score([12, 14, 16, 24, 26, 28]) ? 'l' : 'r'
-}
-
-type Row = Record<string, string | number | null>
+// Batch run: many videos through any of the pose models in one go. Saves where each model put each
+// joint on every frame, and how long it took. (Clip by clip does the same for one video at a time.)
 
 type Progress = { video: string; model: string; frame: number; frames: number; done: number; total: number }
 
@@ -57,88 +45,26 @@ function Evaluate({ onResults }: { onResults?: (r: Results) => void }) {
 
         try {
             for (const modelId of models) {
+                const loadStart = performance.now()
                 const model = await loadPoseModel(modelId)
-                const has = new Set(model.points)
+                const loadMs = performance.now() - loadStart
                 for (const file of files) {
                     if (stopRef.current) break
-                    const exerciseId = exerciseFromName(file.name) ?? fallback
+                    const exercise = exerciseFromName(file.name) ?? fallback
                     await loadVideo(video, file)
-                    const w = video.videoWidth
-                    const h = video.videoHeight
-                    canvas.width = w
-                    canvas.height = h
-                    const count = Math.floor(video.duration * fps)
-                    let detectedFrames = 0
-                    let totalMs = 0
-
-                    for (let i = 0; i < count; i++) {
-                        if (stopRef.current) break
-                        await seek(video, frameTime(i, fps))
-                        const time = i / fps
-                        const result = await model.detect(video, time * 1000)
-                        const detected = !!result.landmarks
-                        totalMs += result.ms
-                        if (detected) detectedFrames++
-
-                        const row: Row = {
-                            video: file.name,
-                            exercise: exerciseId,
-                            model: modelId,
-                            frame: i,
-                            time,
-                            width: w,
-                            height: h,
-                            ms: result.ms,
-                            detected: detected ? 1 : 0,
-                            side: sideOf(result.landmarks),
-                        }
-                        for (const [name, index] of JOINTS) {
-                            const l = result.landmarks?.[index]
-                            row[`${name}_x`] = l ? l.x * w : null
-                            row[`${name}_y`] = l ? l.y * h : null
-                            row[`${name}_v`] = l ? l.visibility : null
-                        }
-                        frames.push(row)
-
-                        // preview, a few times a second
-                        if (i % 5 === 0) {
-                            ctx.clearRect(0, 0, w, h)
-                            const l = result.landmarks
-                            if (l) {
-                                ctx.strokeStyle = 'rgba(255,255,255,0.85)'
-                                ctx.lineWidth = Math.max(3, w / 250)
-                                for (const [a, b] of model.connections) {
-                                    ctx.beginPath()
-                                    ctx.moveTo(l[a].x * w, l[a].y * h)
-                                    ctx.lineTo(l[b].x * w, l[b].y * h)
-                                    ctx.stroke()
-                                }
-                                ctx.fillStyle = '#f5c518'
-                                for (const p of has) {
-                                    ctx.beginPath()
-                                    ctx.arc(l[p].x * w, l[p].y * h, Math.max(4, w / 200), 0, Math.PI * 2)
-                                    ctx.fill()
-                                }
-                            }
-                            setProgress({ video: file.name, model: model.info.name, frame: i, frames: count, done, total })
-                        }
-                    }
-
-                    runs.push({
-                        video: file.name,
-                        exercise: exerciseId,
-                        model: modelId,
-                        model_name: model.info.name,
-                        backend: model.backend,
+                    const out = await runClip({
+                        video,
+                        name: file.name,
+                        model,
                         fps,
-                        frames: count,
-                        detected_frames: detectedFrames,
-                        mean_ms: count ? totalMs / count : null,
-                        width: w,
-                        height: h,
-                        browser: navigator.userAgent,
-                        date: new Date().toISOString(),
+                        loadMs,
+                        exercise,
+                        canvas,
+                        shouldStop: () => stopRef.current,
+                        onProgress: (frame, count) => setProgress({ video: file.name, model: model.info.name, frame, frames: count, done, total }),
                     })
+                    frames.push(...out.frames)
+                    runs.push(out.run)
                     done++
                 }
                 model.close()
