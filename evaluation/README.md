@@ -1,149 +1,79 @@
 # Evaluation: MediaPipe vs YOLO-pose
 
-This folder holds everything for the model comparison in the paper. Both pose models run the
-**same videos, frame by frame, through the same rules** (`src/engine.ts` + `src/exercises.ts`).
-The only thing that changes is the model that finds the joints, so any difference in the results
-comes from the pose model.
+The question: **which pose model measures joint angles more accurately, and which one is better to
+use in which situation?**
 
-```
-evaluation/
-├── README.md             this file
-├── labels_template.csv   copy to data/labels.csv and fill in
-├── score.py              turns the data into every table and chart
-├── requirements.txt
-├── data/                 your CSV files go here (not the videos)
-└── results/              made by score.py: results.md, tables/, figures/
-```
+Both models run on the same videos, frame by frame. On a sample of frames the joints are marked by
+hand; the angles from those marks are the ground truth. Each model's angles are compared with
+them, overall and split by situation. Everything runs in the app: *Research*.
 
 ## The workflow
 
 1. **Film** the clips (plan below).
-2. **Label** every rep by hand in `data/labels.csv`. Do this *before* looking at any model output.
-3. **Run the batch evaluation** in the app: *Research → Batch evaluation*. Pick all the clips,
-   tick *MediaPipe Full* and *YOLO11n-pose*, then press Run. Save `reps.csv`, `frames.csv` and
-   `runs.csv` into `data/`.
-4. **Mark joints** on a sample of frames: *Research → Mark joints*. Save each video's keypoints
-   CSV into `data/`.
-5. **Score:**
-   ```
-   pip3 install -r evaluation/requirements.txt
-   python3 evaluation/score.py
-   ```
-   Open `evaluation/results/results.md`.
+2. **Batch evaluation** (*Research → Batch evaluation*): pick all the clips, tick *MediaPipe Full*
+   and *YOLO11n-pose*, Run. Download `frames.csv` and `runs.csv` and keep them in `data/`.
+3. **Mark joints** (*Research → Mark joints*): click the joints on a sample of frames. Download each
+   clip's keypoints CSV into `data/`.
+4. **Compare** (*Research → Compare*): anything from this session is already there; otherwise add
+   the CSVs. You get the verdict, which model to use where, every table, charts (download as SVG)
+   and a Markdown report.
 
-Freeze the rules before step 3. Changing a threshold after seeing the results turns the test data
-into calibration data, and the results stop counting as a test.
+## 1. Filming plan
 
-## 1. Filming plan (two participants)
+Squats and push-ups, about 5 reps per clip, phone on a tripod, **1080p, 30 fps**, whole body in
+frame. **Stand still for 1–2 seconds before the first rep** (the steadiness check uses the first
+second).
 
-For each person, film **two sessions on different days**, in different clothes and a different
-room or time of day.
+| Camera setup | What | Why |
+|---|---|---|
+| `side` | side-on, hip height, 2–3 m, good light | the normal setup |
+| `diagonal` | camera at 45° | joints overlap and look shorter |
+| `dim` | low light | harder to see joints |
+| `far` | about 4 m away | the body is small in the frame |
 
-Each session:
+Film each exercise in each setup, with a mix of good and sloppy reps (deep, shallow, leaning,
+sagging…), so the joints go through their whole range. Different days, clothes and people make
+the results stronger.
 
-| Exercise | One clip each, about 5 reps |
+**File names:** `P01_S1_squat_shallow_side.mp4` = person, session, exercise, what you did, camera
+setup. The app reads the exercise and camera setup from the name. `P01` = you, `P02`… = friends,
+`D01`… = clips from a public dataset.
+
+## 2. Marking joints (the ground truth)
+
+Open a clip, choose the side facing the camera, then click the joints in order: nose, ear,
+shoulder, elbow, wrist, hip, knee, ankle. Press **S** if a joint isn't visible. ← → moves one
+frame, Shift + ← → ten.
+
+Mark about **3 frames per rep** (top, halfway down, bottom) on 2–3 reps of each clip, aiming for
+**150–200 frames** spread across both exercises and all four camera setups. Click the centre of
+each joint. Mark a clip before looking at the models' skeletons on it, so they don't pull your
+clicks. Keep the frame rate at 30, the same as the batch run.
+
+## What Compare reports
+
+| Section | What it shows |
 |---|---|
-| Squat | good, shallow, lean, head, toes |
-| Push-up | good, shallow, sag, pike, lockout, head |
+| Verdict | which model's angles are closer to the truth overall, whether that's significant, and which model to use in each situation |
+| Angle accuracy | per angle (knee, elbow, hip, body line, neck, torso lean): mean and median error, RMSE, bias (reads too big or too small), % within 5° and 10°, % missed, Wilcoxon test |
+| Which model where | angle error split by camera setup, exercise, how bent the joint is (under 90°, 90–140°, over 140°), angle, and whose clips, with the better model and p for each |
+| Joint placement | PCK@0.1 / @0.2 and error per joint as % of torso length |
+| Consistency (no marking needed, every frame) | person found %, steadiness in the first second, bone-length consistency (bones don't change length), angle jitter, agreement between the models (Bland–Altman) |
+| Speed | ms per frame, 95th percentile, FPS, Wilcoxon test |
 
-All of the above in the **main setup**: side-on, phone on a tripod at hip height, 2–3 m away, good
-light, whole body in frame.
-
-Then **robustness clips** (good + shallow for each exercise) in: `diagonal` (camera at 45°),
-`dim` (low light), `far` (about 4 m).
-
-Settings: **1080p, 30 fps, landscape**. Stand still for a second before the first rep.
-
-### File names
-
-`P01_S1_squat_shallow_side.mp4` = participant, session, exercise, what you did, condition.
-The app reads the exercise from the name, and the labels match on the exact file name.
-
-## 2. Labelling (labels.csv)
-
-One row per real rep:
-
-| column | meaning |
-|---|---|
-| video | exact file name |
-| source | `own` (your clips), `friends`, or `dataset` (Mendeley) |
-| participant, session | P01 / S1 … (friends P02, P03…; dataset clips D01, D02… with session empty) |
-| exercise | `squat` or `pushup` |
-| condition | `side`, `diagonal`, `dim`, `far` |
-| rep | 1, 2, 3 … |
-| start_s | seconds: the moment the body starts going down from the top |
-| end_s | seconds: the moment it is back at the top |
-| correct | 1 = good form, 0 = has at least one fault |
-| faults | codes separated by `;` (empty when correct) |
-
-Fault codes (the same ones the app reports):
-
-- **squat:** `shallow`, `lean`, `head`, `toes`
-- **pushup:** `shallow`, `sag`, `pike`, `lockout`, `head`
-
-Label from what actually happened, not from what you meant to do. If a "good" rep was actually
-shallow, label it shallow.
-
-To get the times, play the clip in QuickTime or VLC and step frame by frame (← →). You can also use
-the frame bar in *Research → Mark joints*, which shows the time of every frame.
-
-**Clips from three sources** all use the same format. Rename the dataset and friends' clips so the
-exercise is in the name (e.g. `D01_squat_side.mp4`, `P03_S1_pushup_good_side.mp4`); the app reads
-the exercise from the name. Leave out any clip that was used to set the thresholds, because a clip
-the rules were tuned on can't also test them. score.py splits the results by source in Table 11b.
-
-**Two raters:** you and your friend each fill in a copy on your own. Save one as `labels.csv` and
-the other as `labels_rater2.csv`. score.py then reports Cohen's kappa. Afterwards, settle any
-disagreements together and update `labels.csv`.
-
-## 3. Marking joints (keypoints)
-
-In *Research → Mark joints*, open a clip, choose the side facing the camera, then click the joints
-in order: nose, ear, shoulder, elbow, wrist, hip, knee, ankle. Press **S** if a joint isn't
-visible. Use ← → to move one frame, and Shift + ← → to move ten.
-
-Mark about **3 frames per rep** (top, halfway down, bottom) on a few reps of each clip, aiming for
-150–200 frames in total, spread across exercises and conditions. Use the same frame rate as the
-batch run (30). Marks are saved in the browser as you go. Download the CSV when you finish a clip.
-
-## What score.py reports
-
-| Section | Metrics |
-|---|---|
-| Overall comparison | every headline number side by side, which model is better, and whether the gap is significant |
-| Dataset | reps per exercise, fault and condition |
-| Label agreement | Cohen's kappa between the two raters |
-| Rep counting | count error per set, % of sets counted exactly, rep recall/precision, start/end error (ms), temporal IoU |
-| Form classification | precision, recall, F1, accuracy, specificity (positive = faulty rep), with 95% CI; per-fault P/R/F1; macro F1 |
-| Significance | exact McNemar test on the same reps, paired bootstrap CI of the F1 difference |
-| Robustness | rep recall and F1 for each camera condition |
-| Pose estimation | % of frames with a person found, angle jitter |
-| Speed | mean / median / p95 ms per frame, FPS, Wilcoxon test |
-| Keypoints | PCK@0.1 and PCK@0.2 (by torso length), per-joint error, joint-angle MAE, Wilcoxon test |
-
-Confidence intervals resample **whole videos** rather than single reps, because reps in the same
-clip are not independent.
-
-**How reps are matched:** a counted rep is paired with the real rep whose start–end window contains
-the counted rep's lowest point. Real reps with no match are *missed*; counted reps with no match
-are *extra*. Classification is scored on the matched reps, and missed/extra reps show up in the
-counting table.
+p-values come from paired Wilcoxon signed-rank tests on the same frames or clips: p < 0.05 means
+one model really is closer, not just by chance.
 
 ## Things to write about in the paper
 
-- **Same rules, same frames, same laptop.** Every frame is processed (the video is stepped, not
-  played), so a slower model never skips frames. Time is measured around the model only.
-- **YOLO has 17 points and no feet.** The squat *toes* check can't run with YOLO, so it scores 0
-  there. Report it as a capability difference, not an accuracy one.
+- **Same frames, same laptop.** Every frame is processed (the video is stepped, not played), so a
+  slower model never skips frames. Time is measured around the model only.
+- **YOLO has 17 points and no feet.** It can't measure anything that needs the heel or toes.
 - **MediaPipe smooths over time, YOLO doesn't.** MediaPipe's VIDEO mode tracks the person between
-  frames; YOLO looks at each frame on its own. The app applies the same smoothing on top of both.
-  This shows up in the jitter table.
-- **Where they run.** MediaPipe runs on the GPU through WebGL; YOLO runs through ONNX Runtime Web
-  on WebGPU, or on the CPU (wasm) if WebGPU isn't available. `runs.csv` records which backend was
-  used. Run everything on the same laptop, plugged in, with nothing else open.
-- **Diagonal (45°) clips.** The rules pause when the torso looks more than 25% shorter or longer
-  than at the start (meant to catch walking towards or away from the camera). At 45°, leaning
-  forward makes the torso look shorter, so reps can be paused instead of counted with both models.
-  This is a limitation of the side-on rules, and the robustness table will show it.
-- **Two participants.** State it as a limitation. The Mendeley good/bad-form dataset can serve as an
-  extra set of people you didn't film.
+  frames; YOLO looks at each frame on its own. This shows up in steadiness and jitter.
+- **Where they run.** MediaPipe on the GPU through WebGL; YOLO through ONNX Runtime Web on WebGPU,
+  or on the CPU (wasm) if WebGPU isn't available. `runs.csv` records which.
+- **Hand marks have error too.** One person clicking joints is the reference, not perfect truth. If
+  you can, mark 20–30 frames twice, a week apart, and report how far apart your own clicks are.
+- **Two-dimensional angles.** Angles are measured in the image, so camera angle changes them. That
+  is exactly what the diagonal clips test.

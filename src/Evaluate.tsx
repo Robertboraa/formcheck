@@ -1,20 +1,30 @@
 import { useRef, useState } from 'react'
-import { createEngine } from './engine'
 import { EXERCISES } from './exercises'
-import { POSE_MODELS, loadPoseModel } from './pose'
-import { JOINTS, download, exerciseFromName, frameTime, loadVideo, seek, toCsv } from './csv'
+import { POSE_MODELS, loadPoseModel, type Landmark } from './pose'
+import { JOINTS, clipInfo, download, exerciseFromName, frameTime, loadVideo, seek, toCsv } from './csv'
 
-// Batch evaluation: runs every chosen video through every chosen pose model, frame by frame,
-// with the same rules (engine.ts), and saves what happened as CSV files for evaluation/score.py.
+// Batch run: every chosen video through every chosen pose model, frame by frame. It saves where
+// each model put each joint on every frame, and how long it took. The Compare tab measures those
+// joints against the hand-marked ones.
 //
 // Every frame is processed (the video is stepped, not played), so a slower model never skips
 // frames. The time per frame is measured around the model only, not the stepping.
+
+// which side of the body faces the camera: the side whose joints the model sees more clearly
+function sideOf(l: Landmark[] | undefined): 'l' | 'r' {
+    if (!l) return 'l'
+    const score = (ids: number[]) => ids.reduce((s, i) => s + (l[i]?.visibility ?? 0), 0)
+    return score([11, 13, 15, 23, 25, 27]) >= score([12, 14, 16, 24, 26, 28]) ? 'l' : 'r'
+}
 
 type Row = Record<string, string | number | null>
 
 type Progress = { video: string; model: string; frame: number; frames: number; done: number; total: number }
 
-function Evaluate() {
+type Results = { frames: Row[]; runs: Row[] }
+
+// onResults: hands a finished run to the Compare tab
+function Evaluate({ onResults }: { onResults?: (r: Results) => void }) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const stopRef = useRef(false)
@@ -25,7 +35,7 @@ function Evaluate() {
     const [running, setRunning] = useState(false)
     const [progress, setProgress] = useState<Progress | null>(null)
     const [error, setError] = useState('')
-    const [results, setResults] = useState<{ reps: Row[]; frames: Row[]; runs: Row[] } | null>(null)
+    const [results, setResults] = useState<Results | null>(null)
 
     function toggleModel(id: string) {
         setModels((old) => (old.includes(id) ? old.filter((m) => m !== id) : [...old, id]))
@@ -40,7 +50,6 @@ function Evaluate() {
         setError('')
         setResults(null)
         stopRef.current = false
-        const reps: Row[] = []
         const frames: Row[] = []
         const runs: Row[] = []
         let done = 0
@@ -53,14 +62,12 @@ function Evaluate() {
                 for (const file of files) {
                     if (stopRef.current) break
                     const exerciseId = exerciseFromName(file.name) ?? fallback
-                    const exercise = EXERCISES.find((x) => x.id === exerciseId)!
                     await loadVideo(video, file)
                     const w = video.videoWidth
                     const h = video.videoHeight
                     canvas.width = w
                     canvas.height = h
                     const count = Math.floor(video.duration * fps)
-                    const engine = createEngine(exercise, { fromFile: true })
                     let detectedFrames = 0
                     let totalMs = 0
 
@@ -69,9 +76,9 @@ function Evaluate() {
                         await seek(video, frameTime(i, fps))
                         const time = i / fps
                         const result = await model.detect(video, time * 1000)
-                        const out = engine.step(result.landmarks, w, h, time)
+                        const detected = !!result.landmarks
                         totalMs += result.ms
-                        if (out.detected) detectedFrames++
+                        if (detected) detectedFrames++
 
                         const row: Row = {
                             video: file.name,
@@ -82,11 +89,8 @@ function Evaluate() {
                             width: w,
                             height: h,
                             ms: result.ms,
-                            detected: out.detected ? 1 : 0,
-                            side: out.joints.shoulder === 11 ? 'l' : 'r',
-                            main_raw: out.rawMain,
-                            main_smooth: out.main,
-                            event: out.rep ? `rep ${out.rep.n}` : (out.status ?? ''),
+                            detected: detected ? 1 : 0,
+                            side: sideOf(result.landmarks),
                         }
                         for (const [name, index] of JOINTS) {
                             const l = result.landmarks?.[index]
@@ -97,7 +101,7 @@ function Evaluate() {
                         frames.push(row)
 
                         // preview, a few times a second
-                        if (i % 5 === 0 || out.rep) {
+                        if (i % 5 === 0) {
                             ctx.clearRect(0, 0, w, h)
                             const l = result.landmarks
                             if (l) {
@@ -120,27 +124,6 @@ function Evaluate() {
                         }
                     }
 
-                    for (const rep of engine.finish()) {
-                        reps.push({
-                            video: file.name,
-                            exercise: exerciseId,
-                            model: modelId,
-                            rep: rep.n,
-                            start_s: rep.startTime,
-                            bottom_s: rep.bottomTime,
-                            count_s: rep.countTime,
-                            end_s: rep.endTime,
-                            verdict: rep.perfect ? 'perfect' : rep.good ? 'good' : 'bad',
-                            correct: rep.good ? 1 : 0,
-                            faults: [...new Set(rep.faultList.map((f) => f.code))].join(';'),
-                            bottom_angle: rep.bottom,
-                            top_angle: rep.top,
-                            measures: Object.entries(rep.worst)
-                                .filter(([, v]) => v !== undefined)
-                                .map(([k, v]) => `${k}=${(v as number).toFixed(2)}`)
-                                .join(';'),
-                        })
-                    }
                     runs.push({
                         video: file.name,
                         exercise: exerciseId,
@@ -150,7 +133,6 @@ function Evaluate() {
                         fps,
                         frames: count,
                         detected_frames: detectedFrames,
-                        reps: engine.reps.length,
                         mean_ms: count ? totalMs / count : null,
                         width: w,
                         height: h,
@@ -161,10 +143,14 @@ function Evaluate() {
                 }
                 model.close()
             }
-            setResults({ reps, frames, runs })
+            setResults({ frames, runs })
+            onResults?.({ frames, runs })
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err))
-            if (reps.length || runs.length) setResults({ reps, frames, runs })
+            if (runs.length) {
+                setResults({ frames, runs })
+                onResults?.({ frames, runs })
+            }
         } finally {
             setRunning(false)
             setProgress(null)
@@ -192,13 +178,16 @@ function Evaluate() {
                         {files.map((f) => (
                             <li key={f.name}>
                                 <span>{f.name}</span>
-                                <span className="muted">{exerciseFromName(f.name) ?? `${fallback}?`}</span>
+                                <span className="muted">
+                                    {exerciseFromName(f.name) ?? `${fallback}?`} · {clipInfo(f.name).condition}
+                                </span>
                             </li>
                         ))}
                     </ul>
                 )}
                 <p className="muted small">
-                    The exercise is read from the file name (squat / pushup). Files without one use:{' '}
+                    The exercise and camera setup are read from the file name (squat / pushup, and side / diagonal /
+                    dim / far). Files without an exercise use:{' '}
                     <select value={fallback} onChange={(e) => setFallback(e.target.value)}>
                         {EXERCISES.map((x) => (
                             <option key={x.id} value={x.id}>
@@ -253,12 +242,12 @@ function Evaluate() {
                 {results && (
                     <div className="downloads">
                         <span className="label">4. Save the results</span>
-                        <p className="muted small">Put these in the evaluation/data folder, then run score.py.</p>
+                        <p className="muted small">
+                            Already added to the Compare tab. Download both files too, so you can load them again after
+                            a refresh or on another day.
+                        </p>
                         <div className="actions">
-                            <button className="btn primary" onClick={() => download(`reps_${stamp()}.csv`, toCsv(results.reps))}>
-                                reps.csv ({results.reps.length})
-                            </button>
-                            <button className="btn" onClick={() => download(`frames_${stamp()}.csv`, toCsv(results.frames))}>
+                            <button className="btn primary" onClick={() => download(`frames_${stamp()}.csv`, toCsv(results.frames))}>
                                 frames.csv ({results.frames.length})
                             </button>
                             <button className="btn" onClick={() => download(`runs_${stamp()}.csv`, toCsv(results.runs))}>
@@ -270,7 +259,6 @@ function Evaluate() {
                                 <tr>
                                     <th>Video</th>
                                     <th>Model</th>
-                                    <th>Reps</th>
                                     <th>Found</th>
                                     <th>ms/frame</th>
                                 </tr>
@@ -280,7 +268,6 @@ function Evaluate() {
                                     <tr key={`${r.video}-${r.model}`}>
                                         <td>{r.video}</td>
                                         <td>{r.model_name}</td>
-                                        <td>{r.reps}</td>
                                         <td>{Math.round(((r.detected_frames as number) / ((r.frames as number) || 1)) * 100)}%</td>
                                         <td>{(r.mean_ms as number)?.toFixed(1)}</td>
                                     </tr>

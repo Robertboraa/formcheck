@@ -11,8 +11,8 @@ export function toCsv(rows: Record<string, unknown>[]): string {
     return [columns.join(','), ...rows.map((r) => columns.map((c) => cell(r[c])).join(','))].join('\n') + '\n'
 }
 
-export function download(name: string, text: string) {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }))
+export function download(name: string, text: string, type = 'text/csv') {
+    const url = URL.createObjectURL(new Blob([text], { type }))
     const a = document.createElement('a')
     a.href = url
     a.download = name
@@ -68,4 +68,25 @@ export function exerciseFromName(name: string): string | undefined {
     if (/push[-_ ]?ups?/i.test(name)) return 'pushup'
     if (/squat/i.test(name)) return 'squat'
     return undefined
+}
+
+// everything the file name says about a clip, e.g. P01_S1_squat_shallow_side.mp4
+// P01 = you, P02… = friends, D01… = public dataset; the last of side/diagonal/dim/far is the condition
+export const CONDITIONS = ['side', 'diagonal', 'dim', 'far'] as const
+
+export type ClipInfo = {
+    participant: string
+    session: string
+    exercise: string
+    condition: string
+    source: 'own' | 'friends' | 'dataset' | 'unknown'
+}
+
+export function clipInfo(name: string): ClipInfo {
+    const tokens = name.replace(/\.[^.]+$/, '').split(/[_\s-]+/).map((t) => t.toLowerCase())
+    const participant = (tokens.find((t) => /^[pd]\d+$/.test(t)) ?? '').toUpperCase()
+    const session = (tokens.find((t) => /^s\d+$/.test(t)) ?? '').toUpperCase()
+    const condition = [...tokens].reverse().find((t) => (CONDITIONS as readonly string[]).includes(t)) ?? 'side'
+    const source = participant === 'P01' ? 'own' : participant.startsWith('P') ? 'friends' : participant.startsWith('D') ? 'dataset' : 'unknown'
+    return { participant, session, exercise: exerciseFromName(name) ?? '', condition, source }
 }

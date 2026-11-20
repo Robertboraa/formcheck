@@ -52,7 +52,7 @@ Browser (React + TypeScript)                         API (Node + Express)       
 - **Two model families behind one interface** (`src/pose.ts`). MediaPipe Pose (Lite / Full / Heavy, 33 points) runs through MediaPipe Tasks on the GPU. Ultralytics YOLO11n/s-pose (17 COCO points) is exported to ONNX and runs through ONNX Runtime Web on WebGPU, or on the CPU (wasm) when WebGPU isn't there. YOLO's points are put into MediaPipe's numbering, so the rules don't know which model is running.
 - **One rules engine** (`src/engine.ts`) is shared by the live camera and the batch evaluation, so both models are always judged by exactly the same code.
 - **Checked against the reference:** the browser YOLO output is within about 1 px of Ultralytics' Python output on the same frame.
-- **Research tools** (*Research* in the top bar): batch evaluation steps through every frame of a set of videos with each model and exports CSVs, and a joint-marking tool records hand-placed keypoints as ground truth. `evaluation/score.py` turns these into every table in the paper. See [evaluation/README.md](evaluation/README.md).
+- **Research tools** (*Research* in the top bar): batch evaluation steps through every frame of a set of videos with each model and saves where it put every joint; a joint-marking tool records hand-placed joints as ground truth; and **Compare** measures each model's joint angles against the hand marks — overall and split by situation (camera angle, light, distance, exercise, how bent the joint is) — with significance tests, consistency checks that need no marking (steadiness, bone-length consistency, model agreement), speed, charts and a Markdown report. See [evaluation/README.md](evaluation/README.md).
 
 ### Accounts and storage (the API)
 
@@ -158,7 +158,8 @@ src/
   pose.ts          pose models: MediaPipe and YOLO11-pose (ONNX), one interface
   engine.ts        rep counting and form judging, shared by live and batch
   exercises.ts     one entry per exercise: measurements, thresholds, rules
-  Research.tsx     research tools: Evaluate.tsx (batch runs) and Annotate.tsx (joint marking)
+  Research.tsx     research tools: Evaluate.tsx (batch runs), Annotate.tsx (joint marking), Compare.tsx (model comparison)
+  compare/         data loading, statistics, metrics and report for Compare
   csv.ts           CSV export and frame stepping
   Summary.tsx      session summary and comparison with the previous session
   History.tsx      saved sessions and progress chart
@@ -172,7 +173,7 @@ server/
   src/schema.sql   database tables
   test/            API tests
 public/models/     YOLO11n-pose and YOLO11s-pose (ONNX)
-evaluation/        model comparison: labels template, score.py, results
+evaluation/        model comparison: how to film, mark and compare
 ```
 
 ## Known limitations
@@ -186,7 +187,7 @@ evaluation/        model comparison: labels template, score.py, results
 ## Roadmap
 
 - [x] YOLO11-pose as a second pose model, with batch evaluation and joint-marking tools
-- [ ] Evaluation and paper: MediaPipe vs YOLO-pose (precision, recall, rep counting, angle error, latency)
+- [ ] Evaluation and paper: MediaPipe vs YOLO-pose joint-angle accuracy, by situation
 - [ ] Deploy the app and API with a live link
 - [ ] Bundle the pose model so the analysis works offline
 - [ ] Pull-ups and dumbbell shoulder press

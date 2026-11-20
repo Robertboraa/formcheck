@@ -3,7 +3,7 @@ import { download, frameTime, loadVideo, seek, toCsv } from './csv'
 
 // Hand-marking joints on video frames. This is the ground truth for the joint-angle error
 // and keypoint accuracy (PCK) of each pose model. Frames are numbered exactly like the batch
-// evaluation (same frame rate), so score.py can line them up.
+// run (same frame rate), so the Compare tab can line them up.
 
 // the joints the rules use, in click order (for the side facing the camera)
 const ORDER = ['nose', 'ear', 'shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle'] as const
@@ -31,7 +31,8 @@ function saveStore(name: string, store: Store) {
     }
 }
 
-function Annotate() {
+// onExport: also hands the marks to the Compare tab
+function Annotate({ onExport }: { onExport?: (name: string, rows: Record<string, string | number>[]) => void }) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [file, setFile] = useState<File | null>(null)
@@ -162,7 +163,9 @@ function Annotate() {
             }
         }
         rows.sort((a, b) => (a.frame as number) - (b.frame as number))
-        download(`keypoints_${file.name.replace(/\.[^.]+$/, '')}.csv`, toCsv(rows))
+        const name = `keypoints_${file.name.replace(/\.[^.]+$/, '')}.csv`
+        download(name, toCsv(rows))
+        onExport?.(name, rows)
     }
 
     const markedFrames = Object.keys(store)
