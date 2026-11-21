@@ -562,13 +562,45 @@ export function buildReport(data: Dataset): Report {
         s.tables.push({ id: 'tracking', title: 'Person found (% of frames)', columns: ['model', 'frames', 'all', ...conds], rows: trackRows, digits: 1 })
         addOverall('Person found (% of frames)', Object.fromEntries(models.map((m) => [m, pct(mean(data.frames.filter((f) => f.model === m).map((f) => +f.detected)))])), true)
 
-        // steadiness in the first second, when the person is standing still
+        // steadiness while standing still: the stillest second at the top position before the first rep.
+        // The window is chosen from all models together (their median angle), so every model is judged
+        // on the same frames.
+        const stillWindow = new Map<string, [number, number]>()
+        for (const video of videos) {
+            const key = KEY_ANGLE[clip(video).exercise]
+            if (!key) continue
+            const side = sideOfClip.get(video) ?? 'l'
+            const byFrame = groupBy(data.frames.filter((f) => f.video === video && f.time <= 8), (f) => String(f.frame))
+            const series = [...byFrame.entries()]
+                .map(([fr, fs]) => {
+                    const vals = finite(fs.map((f) => angleFrom(f, side, key))).sort((x, y) => x - y)
+                    return { frame: Number(fr), angle: vals.length * 2 >= models.length ? vals[Math.floor(vals.length / 2)] : NaN }
+                })
+                .sort((x, y) => x.frame - y.frame)
+            const len = 30
+            let best: [number, number] | null = null
+            let bestSd = Infinity
+            for (let i = 0; i + len <= series.length; i++) {
+                const win = series.slice(i, i + len).map((x) => x.angle)
+                if (win.some((v) => !Number.isFinite(v))) continue
+                const m = median(win)
+                if (m < 140) continue // only the standing / arms-straight position
+                const sd = std(win)
+                if (sd < bestSd) {
+                    bestSd = sd
+                    best = [series[i].frame, series[i + len - 1].frame]
+                }
+            }
+            if (best) stillWindow.set(video, best)
+        }
         const still: { video: string; model: string; sd: number; wobble: number }[] = []
         for (const r of runs) {
             const key = KEY_ANGLE[clip(r.video).exercise]
             const side = sideOfClip.get(r.video) ?? 'l'
-            const win = r.frames.filter((f) => f.detected && f.time <= 1.0)
-            if (!key || win.length < 10) continue
+            const range = stillWindow.get(r.video)
+            if (!key || !range) continue
+            const win = r.frames.filter((f) => f.detected && f.frame >= range[0] && f.frame <= range[1])
+            if (win.length < 10) continue
             const sd = std(finite(win.map((f) => angleFrom(f, side, key))))
             const moves: number[] = []
             for (let i = 1; i < win.length; i++) {
@@ -587,7 +619,7 @@ export function buildReport(data: Dataset): Report {
             s.tables.push({
                 id: 'steadiness',
                 title: 'Steadiness while standing still',
-                note: 'The first second of each clip, before the first rep, when the body is still. Any change in the key angle (knee for squats, elbow for push-ups) or the joints is noise. Lower is better.',
+                note: 'The stillest second in the standing (or arms-straight) position in the first 8 seconds of each clip, picked from all models together so every model is judged on the same frames. Any change in the key angle (knee for squats, elbow for push-ups) or the joints then is noise. Lower is better.',
                 columns: ['model', 'clips', 'angle wobble (SD °)', 'joint wobble (% torso per frame)'],
                 rows: models.map((m) => {
                     const xs = still.filter((x) => x.model === m)
